@@ -48,9 +48,20 @@ type ReaderView struct {
 	currentMatch  int           // Index of current highlighted match (-1 if none)
 	searchActive  bool          // Whether search results are being displayed
 
+	// Continuous scroll mode
+	continuousMode    bool              // Whether continuous scroll is enabled
+	allChapterContent []string          // All chapters combined (in continuous mode)
+	chapterBoundaries []chapterBoundary // Track where each chapter starts in continuous content
+
 	// Dimensions
 	width  int
 	height int
+}
+
+// chapterBoundary tracks where a chapter starts in continuous mode
+type chapterBoundary struct {
+	chapterIndex int // Index into chapters slice
+	lineStart    int // First line of this chapter in allChapterContent
 }
 
 // searchMatch represents a single search match location
@@ -104,6 +115,18 @@ type chapterLoadedMsg struct {
 type positionLoadedMsg struct {
 	position *models.ReadingPosition
 	err      error
+}
+
+// allChaptersLoadedMsg is sent when all chapters are loaded for continuous mode
+type allChaptersLoadedMsg struct {
+	chapters []chapterContent
+	err      error
+}
+
+// chapterContent holds content for a single chapter
+type chapterContent struct {
+	index   int
+	content string
 }
 
 // Init implements View
@@ -209,6 +232,9 @@ func (v *ReaderView) Update(msg tea.Msg) (View, tea.Cmd) {
 			if v.searchActive {
 				v.clearSearch()
 			}
+		case "c":
+			// Toggle continuous scroll mode
+			return v, v.toggleContinuousMode()
 		}
 
 	case tocLoadedMsg:
@@ -265,6 +291,17 @@ func (v *ReaderView) Update(msg tea.Msg) (View, tea.Cmd) {
 			}
 			v.hasPendingPos = false
 		}
+		return v, nil
+
+	case allChaptersLoadedMsg:
+		v.loading = false
+		if msg.err != nil {
+			v.err = msg.err
+			return v, nil
+		}
+		// Build continuous content from all chapters
+		v.buildContinuousContent(msg.chapters)
+		v.err = nil
 		return v, nil
 	}
 
@@ -380,15 +417,21 @@ func (v *ReaderView) renderHeader() string {
 	}
 	titlePart := styles.ReaderHeader.Render(" " + title + " ")
 
+	// Get current chapter (different logic for continuous mode)
+	currentChapter := v.chapter
+	if v.continuousMode {
+		currentChapter = v.getCurrentChapterFromLine(v.lineOffset)
+	}
+
 	// Chapter info
 	chapterTitle := ""
-	if len(v.chapters) > v.chapter && v.chapter >= 0 {
-		chapterTitle = v.chapters[v.chapter].Title
+	if len(v.chapters) > currentChapter && currentChapter >= 0 {
+		chapterTitle = v.chapters[currentChapter].Title
 		if len(chapterTitle) > 20 {
 			chapterTitle = chapterTitle[:17] + "..."
 		}
 	}
-	chapterPart := styles.Help.Render(fmt.Sprintf(" Ch %d/%d: %s ", v.chapter+1, len(v.chapters), chapterTitle))
+	chapterPart := styles.Help.Render(fmt.Sprintf(" Ch %d/%d: %s ", currentChapter+1, len(v.chapters), chapterTitle))
 
 	// Chapter progress (within current chapter)
 	chapterProgress := v.calculateProgress()
@@ -509,13 +552,19 @@ func (v *ReaderView) renderFooter() string {
 		return styles.BookAuthor.Render(searchStatus) + matchInfo + "  " + strings.Join(help, "  ")
 	}
 
+	// Mode indicator
+	modeStr := "paged"
+	if v.continuousMode {
+		modeStr = "continuous"
+	}
+
 	help := []string{
 		styles.HelpKey.Render("j/k") + styles.Help.Render(" scroll"),
-		styles.HelpKey.Render("n/p") + styles.Help.Render(" chapter"),
 		styles.HelpKey.Render("t") + styles.Help.Render(" toc"),
 		styles.HelpKey.Render("/") + styles.Help.Render(" search"),
 		styles.HelpKey.Render("b/B") + styles.Help.Render(" marks"),
-		styles.HelpKey.Render("+/-") + styles.Help.Render(" size:"+scaleStr),
+		styles.HelpKey.Render("c") + styles.Help.Render(" mode:" + modeStr),
+		styles.HelpKey.Render("+/-") + styles.Help.Render(" " + scaleStr),
 		styles.HelpKey.Render("q") + styles.Help.Render(" back"),
 	}
 	return strings.Join(help, "  ")
@@ -1022,4 +1071,138 @@ func (v *ReaderView) clearSearch() {
 	v.searchQuery = ""
 	v.searchMatches = nil
 	v.currentMatch = -1
+}
+
+// toggleContinuousMode switches between paged and continuous scroll modes
+func (v *ReaderView) toggleContinuousMode() tea.Cmd {
+	v.continuousMode = !v.continuousMode
+	v.clearSearch() // Clear search when switching modes
+
+	if v.continuousMode {
+		// Switch to continuous mode - load all chapters
+		v.loading = true
+		return v.loadAllChapters()
+	}
+
+	// Switch back to paged mode
+	// Calculate which chapter we're in based on current position
+	currentChapter := v.getCurrentChapterFromLine(v.lineOffset)
+	v.chapter = currentChapter
+
+	// Clear continuous mode data
+	v.allChapterContent = nil
+	v.chapterBoundaries = nil
+
+	// Load the current chapter
+	return v.loadChapter(v.chapter)
+}
+
+// loadAllChapters loads content from all chapters for continuous mode
+func (v *ReaderView) loadAllChapters() tea.Cmd {
+	return func() tea.Msg {
+		var chapters []chapterContent
+		for i := 0; i < len(v.chapters); i++ {
+			content, err := v.client.GetChapterText(v.book.ID, i)
+			if err != nil {
+				return allChaptersLoadedMsg{err: err}
+			}
+			chapters = append(chapters, chapterContent{
+				index:   i,
+				content: content.Content,
+			})
+		}
+		return allChaptersLoadedMsg{chapters: chapters}
+	}
+}
+
+// buildContinuousContent combines all chapters into a single scrollable view
+func (v *ReaderView) buildContinuousContent(chapters []chapterContent) {
+	v.allChapterContent = nil
+	v.chapterBoundaries = nil
+
+	// Apply text scale to width
+	baseWidth := v.width - 4
+	scaledWidth := int(float64(baseWidth) / v.textScale)
+	if scaledWidth < 20 {
+		scaledWidth = 20
+	}
+	if scaledWidth > baseWidth {
+		scaledWidth = baseWidth
+	}
+	maxWidth := scaledWidth
+
+	for _, ch := range chapters {
+		// Record chapter boundary
+		v.chapterBoundaries = append(v.chapterBoundaries, chapterBoundary{
+			chapterIndex: ch.index,
+			lineStart:    len(v.allChapterContent),
+		})
+
+		// Add chapter header
+		chapterTitle := ""
+		if ch.index < len(v.chapters) {
+			chapterTitle = v.chapters[ch.index].Title
+		}
+		if chapterTitle == "" {
+			chapterTitle = fmt.Sprintf("Chapter %d", ch.index+1)
+		}
+		header := fmt.Sprintf("━━━ %s ━━━", chapterTitle)
+		v.allChapterContent = append(v.allChapterContent, "", header, "")
+
+		// Wrap and add chapter content
+		for _, paragraph := range strings.Split(ch.content, "\n") {
+			if paragraph == "" {
+				v.allChapterContent = append(v.allChapterContent, "")
+				continue
+			}
+
+			words := strings.Fields(paragraph)
+			if len(words) == 0 {
+				v.allChapterContent = append(v.allChapterContent, "")
+				continue
+			}
+
+			var currentLine strings.Builder
+			for _, word := range words {
+				if currentLine.Len() == 0 {
+					currentLine.WriteString(word)
+				} else if currentLine.Len()+1+len(word) <= maxWidth {
+					currentLine.WriteString(" ")
+					currentLine.WriteString(word)
+				} else {
+					v.allChapterContent = append(v.allChapterContent, currentLine.String())
+					currentLine.Reset()
+					currentLine.WriteString(word)
+				}
+			}
+			if currentLine.Len() > 0 {
+				v.allChapterContent = append(v.allChapterContent, currentLine.String())
+			}
+		}
+	}
+
+	// Use continuous content as lines
+	v.lines = v.allChapterContent
+
+	// Try to maintain position in the current chapter
+	if v.chapter < len(v.chapterBoundaries) {
+		v.lineOffset = v.chapterBoundaries[v.chapter].lineStart
+	} else {
+		v.lineOffset = 0
+	}
+}
+
+// getCurrentChapterFromLine determines which chapter a line belongs to
+func (v *ReaderView) getCurrentChapterFromLine(lineIdx int) int {
+	if !v.continuousMode || len(v.chapterBoundaries) == 0 {
+		return v.chapter
+	}
+
+	// Find the chapter that contains this line
+	for i := len(v.chapterBoundaries) - 1; i >= 0; i-- {
+		if lineIdx >= v.chapterBoundaries[i].lineStart {
+			return v.chapterBoundaries[i].chapterIndex
+		}
+	}
+	return 0
 }
