@@ -69,7 +69,8 @@ type LibraryView struct {
 	searchMode       bool
 	searchInput      textinput.Model
 	recentlyReadMode bool
-	confirmDelete    bool        // Show delete confirmation
+	favoritesMode    bool         // Show only favorites
+	confirmDelete    bool         // Show delete confirmation
 	deleteBook       *models.Book // Book pending deletion
 
 	// Sorting
@@ -270,6 +271,19 @@ func (v *LibraryView) Update(msg tea.Msg) (View, tea.Cmd) {
 				v.deleteBook = &book
 				v.confirmDelete = true
 			}
+		case "f":
+			// Toggle favorite on selected book
+			if len(v.books) > 0 && v.cursor < len(v.books) && v.config != nil {
+				book := v.books[v.cursor]
+				_ = v.config.ToggleFavorite(book.ID)
+			}
+		case "F":
+			// Toggle favorites filter
+			v.favoritesMode = !v.favoritesMode
+			v.page = 1
+			v.cursor = 0
+			v.offset = 0
+			return v, v.loadBooks()
 		}
 
 	case booksLoadedMsg:
@@ -383,7 +397,9 @@ func (v *LibraryView) SetSize(width, height int) {
 func (v *LibraryView) renderHeader() string {
 	// Title based on mode and content type filter
 	titleText := " Library "
-	if v.recentlyReadMode {
+	if v.favoritesMode {
+		titleText = " ★ Favorites "
+	} else if v.recentlyReadMode {
 		titleText = " Recently Read "
 	} else {
 		switch v.contentType {
@@ -429,6 +445,12 @@ func (v *LibraryView) renderHeader() string {
 
 // renderBookLine renders a single book line
 func (v *LibraryView) renderBookLine(book models.Book, selected bool) string {
+	// Favorite star indicator
+	star := "  "
+	if v.config != nil && v.config.IsFavorite(book.ID) {
+		star = "★ "
+	}
+
 	// Content type badge (only show when viewing "all")
 	badge := ""
 	if v.contentType == "" && book.ContentType != "" {
@@ -451,21 +473,22 @@ func (v *LibraryView) renderBookLine(book models.Book, selected bool) string {
 		series += ")"
 	}
 
-	// Truncate if needed (account for badge width)
+	// Truncate if needed (account for badge and star width)
 	badgeWidth := 0
 	if badge != "" {
 		badgeWidth = 4 // "[X] " width
 	}
-	maxWidth := v.width - 4 - badgeWidth
+	starWidth := 2 // "★ " or "  "
+	maxWidth := v.width - 4 - badgeWidth - starWidth
 	line := fmt.Sprintf("%s - %s%s", title, author, series)
 	if len(line) > maxWidth {
 		line = line[:maxWidth-3] + "..."
 	}
 
 	if selected {
-		return styles.ListItemSelected.Width(v.width).Render("▸ " + badge + line)
+		return styles.ListItemSelected.Width(v.width).Render("▸ " + star + badge + line)
 	}
-	return styles.ListItem.Render("  " + badge + line)
+	return styles.ListItem.Render("  " + star + badge + line)
 }
 
 // renderFooter renders the footer help
@@ -476,10 +499,10 @@ func (v *LibraryView) renderFooter() string {
 		styles.HelpKey.Render("/") + styles.Help.Render(" search"),
 		styles.HelpKey.Render("s") + styles.Help.Render(" sort"),
 		styles.HelpKey.Render("v") + styles.Help.Render(" filter"),
-		styles.HelpKey.Render("R") + styles.Help.Render(" recent"),
-		styles.HelpKey.Render("d") + styles.Help.Render(" delete"),
+		styles.HelpKey.Render("f") + styles.Help.Render(" fav"),
+		styles.HelpKey.Render("F") + styles.Help.Render(" favs"),
+		styles.HelpKey.Render("d") + styles.Help.Render(" del"),
 		styles.HelpKey.Render("a") + styles.Help.Render(" add"),
-		styles.HelpKey.Render("c") + styles.Help.Render(" collections"),
 		styles.HelpKey.Render("q") + styles.Help.Render(" quit"),
 	}
 	return strings.Join(help, "  ")
@@ -552,6 +575,24 @@ func (v *LibraryView) loadBooks() tea.Cmd {
 			// Order by recently read order
 			for _, id := range recentIDs {
 				if book, exists := bookByID[id]; exists {
+					filteredBooks = append(filteredBooks, book)
+				}
+			}
+
+			return booksLoadedMsg{books: filteredBooks, total: len(filteredBooks)}
+		}
+
+		// Filter by favorites if in that mode
+		if v.favoritesMode && v.config != nil {
+			favoriteIDs := v.config.GetFavoriteIDs()
+			favoriteIDSet := make(map[string]bool)
+			for _, id := range favoriteIDs {
+				favoriteIDSet[id] = true
+			}
+
+			filteredBooks := make([]models.Book, 0)
+			for _, book := range resp.Books {
+				if favoriteIDSet[book.ID] {
 					filteredBooks = append(filteredBooks, book)
 				}
 			}

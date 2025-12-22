@@ -28,6 +28,7 @@ type Config struct {
 	Username     string              `json:"username,omitempty"`
 	RecentlyRead []RecentlyReadEntry `json:"recently_read,omitempty"`
 	TextScale    float64             `json:"text_scale,omitempty"` // 0.5-2.0, default 1.0
+	Favorites    []string            `json:"favorites,omitempty"`  // List of favorited book IDs
 
 	// Path to config file (not persisted)
 	path string `json:"-"`
@@ -136,6 +137,39 @@ func (c *Config) GetRecentlyReadIDs() []string {
 		ids[i] = entry.BookID
 	}
 	return ids
+}
+
+// IsFavorite returns true if the book is favorited
+func (c *Config) IsFavorite(bookID string) bool {
+	for _, id := range c.Favorites {
+		if id == bookID {
+			return true
+		}
+	}
+	return false
+}
+
+// ToggleFavorite adds or removes a book from favorites
+func (c *Config) ToggleFavorite(bookID string) error {
+	if c.IsFavorite(bookID) {
+		// Remove from favorites
+		newFavorites := make([]string, 0, len(c.Favorites))
+		for _, id := range c.Favorites {
+			if id != bookID {
+				newFavorites = append(newFavorites, id)
+			}
+		}
+		c.Favorites = newFavorites
+	} else {
+		// Add to favorites
+		c.Favorites = append(c.Favorites, bookID)
+	}
+	return c.Save()
+}
+
+// GetFavoriteIDs returns the list of favorited book IDs
+func (c *Config) GetFavoriteIDs() []string {
+	return c.Favorites
 }
 
 // GetTextScale returns the text scale, defaulting to 1.0
