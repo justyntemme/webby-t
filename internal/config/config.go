@@ -27,8 +27,9 @@ type Config struct {
 	Token        string              `json:"token,omitempty"`
 	Username     string              `json:"username,omitempty"`
 	RecentlyRead []RecentlyReadEntry `json:"recently_read,omitempty"`
-	TextScale    float64             `json:"text_scale,omitempty"` // 0.5-2.0, default 1.0
-	Favorites    []string            `json:"favorites,omitempty"`  // List of favorited book IDs
+	TextScale    float64             `json:"text_scale,omitempty"`    // 0.5-2.0, default 1.0
+	Favorites    []string            `json:"favorites,omitempty"`     // List of favorited book IDs
+	ReadingQueue []string            `json:"reading_queue,omitempty"` // Ordered list of books to read
 
 	// Path to config file (not persisted)
 	path string `json:"-"`
@@ -170,6 +171,83 @@ func (c *Config) ToggleFavorite(bookID string) error {
 // GetFavoriteIDs returns the list of favorited book IDs
 func (c *Config) GetFavoriteIDs() []string {
 	return c.Favorites
+}
+
+// IsInQueue returns true if the book is in the reading queue
+func (c *Config) IsInQueue(bookID string) bool {
+	for _, id := range c.ReadingQueue {
+		if id == bookID {
+			return true
+		}
+	}
+	return false
+}
+
+// GetQueuePosition returns the 1-based position in queue, or 0 if not in queue
+func (c *Config) GetQueuePosition(bookID string) int {
+	for i, id := range c.ReadingQueue {
+		if id == bookID {
+			return i + 1
+		}
+	}
+	return 0
+}
+
+// ToggleQueue adds or removes a book from the reading queue
+func (c *Config) ToggleQueue(bookID string) error {
+	if c.IsInQueue(bookID) {
+		return c.RemoveFromQueue(bookID)
+	}
+	return c.AddToQueue(bookID)
+}
+
+// AddToQueue adds a book to the end of the reading queue
+func (c *Config) AddToQueue(bookID string) error {
+	if !c.IsInQueue(bookID) {
+		c.ReadingQueue = append(c.ReadingQueue, bookID)
+	}
+	return c.Save()
+}
+
+// RemoveFromQueue removes a book from the reading queue
+func (c *Config) RemoveFromQueue(bookID string) error {
+	newQueue := make([]string, 0, len(c.ReadingQueue))
+	for _, id := range c.ReadingQueue {
+		if id != bookID {
+			newQueue = append(newQueue, id)
+		}
+	}
+	c.ReadingQueue = newQueue
+	return c.Save()
+}
+
+// MoveInQueue moves a book up or down in the queue
+// delta: -1 moves up, +1 moves down
+func (c *Config) MoveInQueue(bookID string, delta int) error {
+	idx := -1
+	for i, id := range c.ReadingQueue {
+		if id == bookID {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return nil // Not in queue
+	}
+
+	newIdx := idx + delta
+	if newIdx < 0 || newIdx >= len(c.ReadingQueue) {
+		return nil // Can't move beyond bounds
+	}
+
+	// Swap positions
+	c.ReadingQueue[idx], c.ReadingQueue[newIdx] = c.ReadingQueue[newIdx], c.ReadingQueue[idx]
+	return c.Save()
+}
+
+// GetQueueIDs returns the ordered list of queued book IDs
+func (c *Config) GetQueueIDs() []string {
+	return c.ReadingQueue
 }
 
 // GetTextScale returns the text scale, defaulting to 1.0
