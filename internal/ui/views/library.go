@@ -64,11 +64,13 @@ type LibraryView struct {
 	offset      int // For scrolling
 
 	// State
-	loading        bool
-	err            error
-	searchMode     bool
-	searchInput    textinput.Model
+	loading          bool
+	err              error
+	searchMode       bool
+	searchInput      textinput.Model
 	recentlyReadMode bool
+	confirmDelete    bool        // Show delete confirmation
+	deleteBook       *models.Book // Book pending deletion
 
 	// Sorting
 	sortBy    sortField
@@ -114,6 +116,12 @@ type booksLoadedMsg struct {
 	err   error
 }
 
+// bookDeletedMsg is sent when a book is deleted
+type bookDeletedMsg struct {
+	bookID string
+	err    error
+}
+
 // Init implements View
 func (v *LibraryView) Init() tea.Cmd {
 	v.loading = true
@@ -124,6 +132,23 @@ func (v *LibraryView) Init() tea.Cmd {
 func (v *LibraryView) Update(msg tea.Msg) (View, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Handle delete confirmation mode
+		if v.confirmDelete {
+			switch msg.String() {
+			case "y", "Y":
+				// Confirm delete
+				v.confirmDelete = false
+				if v.deleteBook != nil {
+					return v, v.deleteBookCmd(v.deleteBook.ID)
+				}
+			case "n", "N", "esc":
+				// Cancel delete
+				v.confirmDelete = false
+				v.deleteBook = nil
+			}
+			return v, nil
+		}
+
 		// Handle search mode
 		if v.searchMode {
 			switch msg.String() {
@@ -238,6 +263,13 @@ func (v *LibraryView) Update(msg tea.Msg) (View, tea.Cmd) {
 			v.cursor = 0
 			v.offset = 0
 			return v, v.loadBooks()
+		case "d":
+			// Delete book (with confirmation)
+			if len(v.books) > 0 && v.cursor < len(v.books) {
+				book := v.books[v.cursor]
+				v.deleteBook = &book
+				v.confirmDelete = true
+			}
 		}
 
 	case booksLoadedMsg:
@@ -253,6 +285,15 @@ func (v *LibraryView) Update(msg tea.Msg) (View, tea.Cmd) {
 			v.cursor = max(0, len(v.books)-1)
 		}
 		return v, nil
+
+	case bookDeletedMsg:
+		v.deleteBook = nil
+		if msg.err != nil {
+			v.err = msg.err
+			return v, nil
+		}
+		// Refresh the book list
+		return v, v.loadBooks()
 	}
 
 	return v, nil
@@ -261,6 +302,11 @@ func (v *LibraryView) Update(msg tea.Msg) (View, tea.Cmd) {
 // View implements View
 func (v *LibraryView) View() string {
 	var b strings.Builder
+
+	// Delete confirmation dialog
+	if v.confirmDelete && v.deleteBook != nil {
+		return v.renderDeleteConfirmation()
+	}
 
 	// Header
 	header := v.renderHeader()
@@ -431,11 +477,48 @@ func (v *LibraryView) renderFooter() string {
 		styles.HelpKey.Render("s") + styles.Help.Render(" sort"),
 		styles.HelpKey.Render("v") + styles.Help.Render(" filter"),
 		styles.HelpKey.Render("R") + styles.Help.Render(" recent"),
+		styles.HelpKey.Render("d") + styles.Help.Render(" delete"),
 		styles.HelpKey.Render("a") + styles.Help.Render(" add"),
 		styles.HelpKey.Render("c") + styles.Help.Render(" collections"),
 		styles.HelpKey.Render("q") + styles.Help.Render(" quit"),
 	}
 	return strings.Join(help, "  ")
+}
+
+// renderDeleteConfirmation renders the delete confirmation dialog
+func (v *LibraryView) renderDeleteConfirmation() string {
+	title := v.deleteBook.Title
+	if len(title) > 40 {
+		title = title[:37] + "..."
+	}
+
+	dialog := styles.Dialog.Width(50).Render(
+		styles.DialogTitle.Render("Delete Book?") + "\n\n" +
+			styles.BookTitle.Render(title) + "\n" +
+			styles.BookAuthor.Render("by "+v.deleteBook.Author) + "\n\n" +
+			styles.ErrorStyle.Render("This action cannot be undone.") + "\n\n" +
+			styles.Help.Render("Press ") +
+			styles.HelpKey.Render("y") +
+			styles.Help.Render(" to confirm, ") +
+			styles.HelpKey.Render("n") +
+			styles.Help.Render(" to cancel"),
+	)
+
+	return lipgloss.Place(
+		v.width,
+		v.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		dialog,
+	)
+}
+
+// deleteBookCmd creates a command to delete a book
+func (v *LibraryView) deleteBookCmd(bookID string) tea.Cmd {
+	return func() tea.Msg {
+		err := v.client.DeleteBook(bookID)
+		return bookDeletedMsg{bookID: bookID, err: err}
+	}
 }
 
 // loadBooks fetches books from the API

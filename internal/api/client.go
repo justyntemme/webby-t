@@ -190,6 +190,21 @@ func (c *Client) GetBook(id string) (*models.Book, error) {
 	return parseResponse[*models.Book](resp)
 }
 
+// DeleteBook deletes a book by ID
+func (c *Client) DeleteBook(id string) error {
+	resp, err := c.request("DELETE", "/api/books/"+id, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to delete book: %s", string(body))
+	}
+	return nil
+}
+
 // UploadBook uploads an epub file to the server
 func (c *Client) UploadBook(filePath string) (*models.Book, error) {
 	// Open the file
