@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/justyntemme/webby-t/internal/api"
+	"github.com/justyntemme/webby-t/internal/config"
 	"github.com/justyntemme/webby-t/internal/ui/styles"
 	"github.com/justyntemme/webby-t/pkg/models"
 )
@@ -55,6 +56,7 @@ func (s sortField) Label() string {
 // LibraryView displays the book library
 type LibraryView struct {
 	client *api.Client
+	config *config.Config
 
 	// Books
 	books       []models.Book
@@ -62,10 +64,11 @@ type LibraryView struct {
 	offset      int // For scrolling
 
 	// State
-	loading     bool
-	err         error
-	searchMode  bool
-	searchInput textinput.Model
+	loading        bool
+	err            error
+	searchMode     bool
+	searchInput    textinput.Model
+	recentlyReadMode bool
 
 	// Sorting
 	sortBy    sortField
@@ -85,7 +88,7 @@ type LibraryView struct {
 }
 
 // NewLibraryView creates a new library view
-func NewLibraryView(client *api.Client) *LibraryView {
+func NewLibraryView(client *api.Client, cfg *config.Config) *LibraryView {
 	searchInput := textinput.New()
 	searchInput.Placeholder = "Search books..."
 	searchInput.CharLimit = 100
@@ -93,6 +96,7 @@ func NewLibraryView(client *api.Client) *LibraryView {
 
 	return &LibraryView{
 		client:      client,
+		config:      cfg,
 		pageSize:    50,
 		page:        1,
 		sortBy:      sortTitle,
@@ -227,6 +231,13 @@ func (v *LibraryView) Update(msg tea.Msg) (View, tea.Cmd) {
 			}
 			v.page = 1
 			return v, v.loadBooks()
+		case "R":
+			// Toggle recently read filter
+			v.recentlyReadMode = !v.recentlyReadMode
+			v.page = 1
+			v.cursor = 0
+			v.offset = 0
+			return v, v.loadBooks()
 		}
 
 	case booksLoadedMsg:
@@ -324,13 +335,17 @@ func (v *LibraryView) SetSize(width, height int) {
 
 // renderHeader renders the header bar
 func (v *LibraryView) renderHeader() string {
-	// Title based on content type filter
+	// Title based on mode and content type filter
 	titleText := " Library "
-	switch v.contentType {
-	case models.ContentTypeBook:
-		titleText = " Books "
-	case models.ContentTypeComic:
-		titleText = " Comics "
+	if v.recentlyReadMode {
+		titleText = " Recently Read "
+	} else {
+		switch v.contentType {
+		case models.ContentTypeBook:
+			titleText = " Books "
+		case models.ContentTypeComic:
+			titleText = " Comics "
+		}
 	}
 	title := styles.TitleBar.Render(titleText)
 
@@ -415,6 +430,7 @@ func (v *LibraryView) renderFooter() string {
 		styles.HelpKey.Render("/") + styles.Help.Render(" search"),
 		styles.HelpKey.Render("s") + styles.Help.Render(" sort"),
 		styles.HelpKey.Render("v") + styles.Help.Render(" filter"),
+		styles.HelpKey.Render("R") + styles.Help.Render(" recent"),
 		styles.HelpKey.Render("a") + styles.Help.Render(" add"),
 		styles.HelpKey.Render("c") + styles.Help.Render(" collections"),
 		styles.HelpKey.Render("q") + styles.Help.Render(" quit"),
@@ -433,6 +449,33 @@ func (v *LibraryView) loadBooks() tea.Cmd {
 		if err != nil {
 			return booksLoadedMsg{err: err}
 		}
+
+		// Filter by recently read if in that mode
+		if v.recentlyReadMode && v.config != nil {
+			recentIDs := v.config.GetRecentlyReadIDs()
+			recentIDSet := make(map[string]bool)
+			for _, id := range recentIDs {
+				recentIDSet[id] = true
+			}
+
+			// Filter books and maintain recently read order
+			filteredBooks := make([]models.Book, 0)
+			bookByID := make(map[string]models.Book)
+			for _, book := range resp.Books {
+				if recentIDSet[book.ID] {
+					bookByID[book.ID] = book
+				}
+			}
+			// Order by recently read order
+			for _, id := range recentIDs {
+				if book, exists := bookByID[id]; exists {
+					filteredBooks = append(filteredBooks, book)
+				}
+			}
+
+			return booksLoadedMsg{books: filteredBooks, total: len(filteredBooks)}
+		}
+
 		return booksLoadedMsg{books: resp.Books, total: resp.Total}
 	}
 }

@@ -471,9 +471,299 @@
       ],
       "createdAt": "2025-12-21T12:21:51-06:00",
       "updatedAt": "2025-12-21T12:21:51-06:00"
+    },
+    {
+      "id": "STORY-009",
+      "title": "Books/Comics Library Toggle",
+      "description": "As a user, I want to toggle between viewing Books, Comics, or All items in the library so that I can focus on the content type I want to read. This uses the existing ?type= API parameter.",
+      "tasks": [
+        {
+          "id": "TASK-049",
+          "title": "Update Book model with ContentType field",
+          "description": "Add ContentType field to the Book model to match API response",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-050",
+          "title": "Add content type filter to API client",
+          "description": "Update ListBooks to accept type parameter (book/comic/all)",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-051",
+          "title": "Add toggle state to library view",
+          "description": "Track current filter mode in LibraryView",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-052",
+          "title": "Add 'b' key to filter books only",
+          "description": "Press b to show only books",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-053",
+          "title": "Add 'm' key to filter comics only",
+          "description": "Press m to show only comics (m for manga/comics)",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-054",
+          "title": "Update header to show current filter",
+          "description": "Display Books/Comics/All indicator in library header",
+          "status": "pending"
+        }
+      ],
+      "priority": 1,
+      "complexity": "low",
+      "status": "completed",
+      "createdAt": "2025-12-21T19:08:05-06:00",
+      "updatedAt": "2025-12-21T19:08:05-06:00"
+    },
+    {
+      "id": "STORY-010",
+      "title": "Display Content Type Badges",
+      "description": "As a user, I want to see a badge indicating whether an item is a Book or Comic in the library list so that I can quickly identify content types when viewing All items.",
+      "priority": 2,
+      "complexity": "low",
+      "status": "completed",
+      "createdAt": "2025-12-21T19:08:05-06:00",
+      "updatedAt": "2025-12-21T19:08:05-06:00"
+    },
+    {
+      "id": "STORY-011",
+      "title": "Comic Image Viewer with go-termimg",
+      "description": "As a user, I want to view comic pages as images in the terminal (for supported terminals) so that I can read comics visually. Falls back to metadata display for unsupported terminals.",
+      "priority": 3,
+      "complexity": "high",
+      "status": "completed",
+      "createdAt": "2025-12-21T19:08:05-06:00",
+      "updatedAt": "2025-12-21T19:08:05-06:00"
+    },
+    {
+      "id": "STORY-012",
+      "title": "Recently Read Section",
+      "description": "Add a \"Recently Read\" section to the library showing the last 5-10 opened books for quick access. Users should be able to toggle between the full library and recently read view.",
+      "tasks": [
+        {
+          "id": "TASK-055",
+          "title": "Add recently read tracking to config",
+          "description": "Store list of recently read book IDs with timestamps in config.json",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-056",
+          "title": "Track book opens in app",
+          "description": "Update recently read list when a book is opened in reader or comic viewer",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-057",
+          "title": "Add recently read API to library view",
+          "description": "Create method to get recently read books from stored IDs",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-058",
+          "title": "Add 'r' keybinding to toggle recently read filter",
+          "description": "Filter library to show only recently read books when 'r' is pressed",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-059",
+          "title": "Update library header to show Recently Read mode",
+          "description": "Display indicator when viewing recently read books",
+          "status": "pending"
+        }
+      ],
+      "priority": 1,
+      "complexity": "low",
+      "status": "ready",
+      "createdAt": "2025-12-22T10:34:21-06:00",
+      "updatedAt": "2025-12-22T10:34:21-06:00"
+    },
+    {
+      "id": "STORY-013",
+      "title": "Favorites/Starred Books",
+      "description": "Allow users to mark books as favorites with a star. Add ability to filter library to show only favorited books. Favorites should persist across sessions.",
+      "priority": 2,
+      "complexity": "medium",
+      "status": "backlog",
+      "createdAt": "2025-12-22T10:34:21-06:00",
+      "updatedAt": "2025-12-22T10:34:21-06:00"
+    },
+    {
+      "id": "STORY-014",
+      "title": "Reading Queue (Want to Read)",
+      "description": "Add a \"Want to Read\" queue where users can add books they plan to read. Queue should be orderable and viewable as a filtered list in the library.",
+      "priority": 3,
+      "complexity": "medium",
+      "status": "backlog",
+      "createdAt": "2025-12-22T10:34:21-06:00",
+      "updatedAt": "2025-12-22T10:34:21-06:00"
+    },
+    {
+      "id": "STORY-015",
+      "title": "Filter by Author/Series",
+      "description": "Add quick filter shortcuts to show only books by a specific author or in a specific series. When a book is selected, allow jumping to \"more by this author\" or \"more in this series\".",
+      "priority": 2,
+      "complexity": "low",
+      "status": "backlog",
+      "createdAt": "2025-12-22T10:34:22-06:00",
+      "updatedAt": "2025-12-22T10:34:22-06:00"
+    },
+    {
+      "id": "STORY-016",
+      "title": "Delete Books from Library",
+      "description": "Allow users to delete books from the library via the TUI. Include confirmation prompt before deletion to prevent accidents.",
+      "priority": 2,
+      "complexity": "low",
+      "status": "backlog",
+      "createdAt": "2025-12-22T10:34:22-06:00",
+      "updatedAt": "2025-12-22T10:34:22-06:00"
+    },
+    {
+      "id": "STORY-017",
+      "title": "Book Details View",
+      "description": "Add a detailed book view showing full metadata: title, author, series, description, publisher, ISBN, file size, upload date, and reading progress. Accessible by pressing a key on a selected book.",
+      "priority": 3,
+      "complexity": "medium",
+      "status": "backlog",
+      "createdAt": "2025-12-22T10:34:22-06:00",
+      "updatedAt": "2025-12-22T10:34:22-06:00"
+    },
+    {
+      "id": "STORY-018",
+      "title": "Cover Thumbnails in Library",
+      "description": "Display book cover thumbnails next to titles in the library view for terminals that support inline images (Kitty, iTerm2, Sixel). Fall back to text-only for unsupported terminals.",
+      "priority": 4,
+      "complexity": "high",
+      "status": "backlog",
+      "createdAt": "2025-12-22T10:34:22-06:00",
+      "updatedAt": "2025-12-22T10:34:22-06:00"
+    },
+    {
+      "id": "STORY-019",
+      "title": "Search Within Book",
+      "description": "Add text search functionality within the current book (epub/pdf). Show search results with context and allow jumping to matches. Support forward/backward navigation between matches.",
+      "priority": 2,
+      "complexity": "medium",
+      "status": "backlog",
+      "createdAt": "2025-12-22T10:34:42-06:00",
+      "updatedAt": "2025-12-22T10:34:42-06:00"
+    },
+    {
+      "id": "STORY-020",
+      "title": "Bookmarks",
+      "description": "Allow users to save bookmarks at specific locations within a book. Show bookmark list and allow jumping to saved positions. Bookmarks should persist and sync with server.",
+      "priority": 2,
+      "complexity": "medium",
+      "status": "backlog",
+      "createdAt": "2025-12-22T10:34:42-06:00",
+      "updatedAt": "2025-12-22T10:34:42-06:00"
+    },
+    {
+      "id": "STORY-021",
+      "title": "Font Size Adjustment",
+      "description": "Add ability to increase/decrease text size in the reader with +/- keys. Font size preference should persist in config. Affects text wrapping and lines per page.",
+      "priority": 1,
+      "complexity": "low",
+      "status": "backlog",
+      "createdAt": "2025-12-22T10:34:42-06:00",
+      "updatedAt": "2025-12-22T10:34:42-06:00"
+    },
+    {
+      "id": "STORY-022",
+      "title": "Visual Progress Bar in Reader",
+      "description": "Add a visual progress bar in the reader footer showing position within current chapter and overall book progress. Use Unicode block characters for smooth rendering.",
+      "priority": 2,
+      "complexity": "low",
+      "status": "backlog",
+      "createdAt": "2025-12-22T10:34:43-06:00",
+      "updatedAt": "2025-12-22T10:34:43-06:00"
+    },
+    {
+      "id": "STORY-023",
+      "title": "Chapter Progress Display",
+      "description": "Show detailed progress within current chapter: \"Page X of Y\" or percentage. Display in reader header alongside chapter title.",
+      "priority": 3,
+      "complexity": "low",
+      "status": "backlog",
+      "createdAt": "2025-12-22T10:34:43-06:00",
+      "updatedAt": "2025-12-22T10:34:43-06:00"
+    },
+    {
+      "id": "STORY-024",
+      "title": "Continuous Scroll Mode",
+      "description": "Add alternative reading mode with continuous scrolling instead of page-by-page navigation. Toggle between modes with a key. Useful for longer reading sessions.",
+      "priority": 4,
+      "complexity": "medium",
+      "status": "backlog",
+      "createdAt": "2025-12-22T10:34:43-06:00",
+      "updatedAt": "2025-12-22T10:34:43-06:00"
+    },
+    {
+      "id": "STORY-025",
+      "title": "Comic Zoom/Pan",
+      "description": "Add zoom and pan functionality to comic viewer. Allow zooming in with z/+ and out with Z/-. Support panning with arrow keys when zoomed. Reset zoom with 0 key.",
+      "priority": 2,
+      "complexity": "high",
+      "status": "backlog",
+      "createdAt": "2025-12-22T10:35:03-06:00",
+      "updatedAt": "2025-12-22T10:35:03-06:00"
+    },
+    {
+      "id": "STORY-026",
+      "title": "Comic Dual Page View",
+      "description": "Add side-by-side two-page spread mode for comics. Toggle between single and dual page view with d key. Handle odd page counts gracefully.",
+      "priority": 3,
+      "complexity": "medium",
+      "status": "backlog",
+      "createdAt": "2025-12-22T10:35:03-06:00",
+      "updatedAt": "2025-12-22T10:35:03-06:00"
+    },
+    {
+      "id": "STORY-027",
+      "title": "Comic Fit Mode Toggle",
+      "description": "Add toggle between fit-width, fit-height, and fit-screen modes for comic pages. Cycle with f key. Remember preference per comic or globally in config.",
+      "priority": 2,
+      "complexity": "medium",
+      "status": "backlog",
+      "createdAt": "2025-12-22T10:35:03-06:00",
+      "updatedAt": "2025-12-22T10:35:03-06:00"
+    },
+    {
+      "id": "STORY-028",
+      "title": "Themes/Color Schemes",
+      "description": "Add support for multiple color themes: dark (default), light, solarized, nord, etc. Theme selection in config and via TUI settings. Custom theme support via JSON.",
+      "priority": 2,
+      "complexity": "medium",
+      "status": "backlog",
+      "createdAt": "2025-12-22T10:35:03-06:00",
+      "updatedAt": "2025-12-22T10:35:03-06:00"
+    },
+    {
+      "id": "STORY-029",
+      "title": "Custom Keybindings",
+      "description": "Allow users to customize keyboard shortcuts via JSON config. Support remapping all navigation, reader, and library keys. Provide sensible defaults and validation.",
+      "priority": 3,
+      "complexity": "medium",
+      "status": "backlog",
+      "createdAt": "2025-12-22T10:35:03-06:00",
+      "updatedAt": "2025-12-22T10:35:03-06:00"
+    },
+    {
+      "id": "STORY-030",
+      "title": "Settings TUI Menu",
+      "description": "Add in-app settings menu accessible with S key from library. Allow configuring theme, font size, keybindings preview, and server URL. Changes persist to JSON config file.",
+      "priority": 3,
+      "complexity": "medium",
+      "status": "backlog",
+      "createdAt": "2025-12-22T10:35:03-06:00",
+      "updatedAt": "2025-12-22T10:35:03-06:00"
     }
   ],
-  "lastUpdated": "2025-12-21T12:35:53-06:00",
-  "nextStoryId": 9,
-  "nextTaskId": 49
+  "lastUpdated": "2025-12-22T10:42:53-06:00",
+  "nextStoryId": 31,
+  "nextTaskId": 60
 }

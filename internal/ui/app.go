@@ -57,7 +57,7 @@ func NewApp(cfg *config.Config) *App {
 
 	// Initialize views
 	app.loginView = views.NewLoginView(client, cfg)
-	app.libraryView = views.NewLibraryView(client)
+	app.libraryView = views.NewLibraryView(client, cfg)
 	app.readerView = views.NewReaderView(client)
 	app.collectionsView = views.NewCollectionsView(client)
 	app.uploadView = views.NewUploadView(client)
@@ -145,6 +145,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.switchView(views.ViewLogin)
 
 	case views.OpenBookMsg:
+		// Track recently read
+		_ = a.config.AddRecentlyRead(msg.Book.ID, msg.Book.Title)
+
 		// Route CBZ files to comic viewer, everything else to text reader
 		// (EPUB comics still use text reader as they have chapter-based content)
 		if msg.Book.IsCBZ() {

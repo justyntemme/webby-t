@@ -4,19 +4,29 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 const (
-	DefaultServerURL = "http://localhost:8080"
-	configFileName   = "config.json"
-	configDirName    = "webby-t"
+	DefaultServerURL   = "http://localhost:8080"
+	configFileName     = "config.json"
+	configDirName      = "webby-t"
+	MaxRecentlyRead    = 10 // Maximum number of recently read books to track
 )
+
+// RecentlyReadEntry represents a recently read book
+type RecentlyReadEntry struct {
+	BookID    string    `json:"book_id"`
+	Title     string    `json:"title"`
+	OpenedAt  time.Time `json:"opened_at"`
+}
 
 // Config holds the application configuration
 type Config struct {
-	ServerURL string `json:"server_url"`
-	Token     string `json:"token,omitempty"`
-	Username  string `json:"username,omitempty"`
+	ServerURL    string              `json:"server_url"`
+	Token        string              `json:"token,omitempty"`
+	Username     string              `json:"username,omitempty"`
+	RecentlyRead []RecentlyReadEntry `json:"recently_read,omitempty"`
 
 	// Path to config file (not persisted)
 	path string `json:"-"`
@@ -83,6 +93,41 @@ func (c *Config) ClearToken() error {
 // IsAuthenticated returns true if a token is stored
 func (c *Config) IsAuthenticated() bool {
 	return c.Token != ""
+}
+
+// AddRecentlyRead adds a book to the recently read list
+func (c *Config) AddRecentlyRead(bookID, title string) error {
+	// Remove existing entry for this book if present
+	newList := make([]RecentlyReadEntry, 0, MaxRecentlyRead)
+	for _, entry := range c.RecentlyRead {
+		if entry.BookID != bookID {
+			newList = append(newList, entry)
+		}
+	}
+
+	// Add new entry at the front
+	entry := RecentlyReadEntry{
+		BookID:   bookID,
+		Title:    title,
+		OpenedAt: time.Now(),
+	}
+	c.RecentlyRead = append([]RecentlyReadEntry{entry}, newList...)
+
+	// Trim to max size
+	if len(c.RecentlyRead) > MaxRecentlyRead {
+		c.RecentlyRead = c.RecentlyRead[:MaxRecentlyRead]
+	}
+
+	return c.Save()
+}
+
+// GetRecentlyReadIDs returns the list of recently read book IDs
+func (c *Config) GetRecentlyReadIDs() []string {
+	ids := make([]string, len(c.RecentlyRead))
+	for i, entry := range c.RecentlyRead {
+		ids[i] = entry.BookID
+	}
+	return ids
 }
 
 // getConfigPath returns the path to the config file
