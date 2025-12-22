@@ -1,7 +1,11 @@
 package views
 
 import (
+	"bytes"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -10,7 +14,15 @@ import (
 	"github.com/justyntemme/webby-t/internal/api"
 	"github.com/justyntemme/webby-t/internal/config"
 	"github.com/justyntemme/webby-t/internal/ui/styles"
+	"github.com/justyntemme/webby-t/internal/ui/utils"
 	"github.com/justyntemme/webby-t/pkg/models"
+	"github.com/nfnt/resize"
+)
+
+// Thumbnail dimensions
+const (
+	thumbHeight = 5  // Lines high for thumbnail
+	thumbWidth  = 10 // Characters wide for thumbnail
 )
 
 // Sort options
@@ -88,6 +100,11 @@ type LibraryView struct {
 	pageSize  int
 	total     int
 
+	// Thumbnail support
+	termMode   utils.TermImageMode
+	coverCache map[string]string // Rendered image strings by book ID
+	showCovers bool              // Toggle for showing covers (default true if supported)
+
 	// Dimensions
 	width  int
 	height int
@@ -100,6 +117,7 @@ func NewLibraryView(client *api.Client, cfg *config.Config) *LibraryView {
 	searchInput.CharLimit = 100
 	searchInput.Width = 40
 
+	termMode := utils.DetectTerminalMode()
 	return &LibraryView{
 		client:      client,
 		config:      cfg,
@@ -108,6 +126,9 @@ func NewLibraryView(client *api.Client, cfg *config.Config) *LibraryView {
 		sortBy:      sortTitle,
 		sortAsc:     true,
 		searchInput: searchInput,
+		termMode:    termMode,
+		coverCache:  make(map[string]string),
+		showCovers:  termMode != utils.TermModeNone, // Enable by default if supported
 		width:       80,
 		height:      24,
 	}
@@ -124,6 +145,45 @@ type booksLoadedMsg struct {
 type bookDeletedMsg struct {
 	bookID string
 	err    error
+}
+
+// coverLoadedMsg is sent when a book cover is fetched and rendered
+type coverLoadedMsg struct {
+	bookID        string
+	renderedImage string
+	err           error
+}
+
+// loadCoverCmd creates a command to fetch, render, and cache a book cover
+func (v *LibraryView) loadCoverCmd(bookID string) tea.Cmd {
+	if v.termMode == utils.TermModeNone {
+		return nil // No image support
+	}
+	if _, exists := v.coverCache[bookID]; exists {
+		return nil // Already cached
+	}
+
+	return func() tea.Msg {
+		imgData, _, err := v.client.GetBookCover(bookID)
+		if err != nil || len(imgData) == 0 {
+			return coverLoadedMsg{bookID: bookID, err: err}
+		}
+
+		img, _, err := image.Decode(bytes.NewReader(imgData))
+		if err != nil {
+			return coverLoadedMsg{bookID: bookID, err: err}
+		}
+
+		// Resize to thumbnail size (height in pixels, roughly 8 pixels per line)
+		resizedImg := resize.Resize(0, uint(thumbHeight*8), img, resize.Lanczos3)
+
+		renderedImage, err := utils.RenderImageToString(resizedImg, v.termMode)
+		if err != nil {
+			return coverLoadedMsg{bookID: bookID, err: err}
+		}
+
+		return coverLoadedMsg{bookID: bookID, renderedImage: renderedImage}
+	}
 }
 
 // Init implements View
@@ -373,6 +433,22 @@ func (v *LibraryView) Update(msg tea.Msg) (View, tea.Cmd) {
 				_ = v.config.SetTheme(newTheme)
 			}
 			return v, NotifyThemeChanged(newTheme)
+		case "C":
+			// Toggle cover thumbnails (only if terminal supports images)
+			if v.termMode != utils.TermModeNone {
+				v.showCovers = !v.showCovers
+				// Load covers if enabling and we have books
+				if v.showCovers && len(v.books) > 0 {
+					var cmds []tea.Cmd
+					visibleCount := v.visibleLines()
+					for i := 0; i < min(visibleCount, len(v.books)); i++ {
+						if cmd := v.loadCoverCmd(v.books[i].ID); cmd != nil {
+							cmds = append(cmds, cmd)
+						}
+					}
+					return v, tea.Batch(cmds...)
+				}
+			}
 		}
 
 	case booksLoadedMsg:
@@ -386,6 +462,23 @@ func (v *LibraryView) Update(msg tea.Msg) (View, tea.Cmd) {
 		v.err = nil
 		if v.cursor >= len(v.books) {
 			v.cursor = max(0, len(v.books)-1)
+		}
+
+		// Load covers for visible books if image support available
+		var cmds []tea.Cmd
+		if v.termMode != utils.TermModeNone {
+			visibleCount := v.visibleLines()
+			for i := 0; i < min(visibleCount, len(v.books)); i++ {
+				if cmd := v.loadCoverCmd(v.books[i].ID); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			}
+		}
+		return v, tea.Batch(cmds...)
+
+	case coverLoadedMsg:
+		if msg.err == nil && msg.renderedImage != "" {
+			v.coverCache[msg.bookID] = msg.renderedImage
 		}
 		return v, nil
 
@@ -540,6 +633,15 @@ func (v *LibraryView) renderHeader() string {
 
 // renderBookLine renders a single book line
 func (v *LibraryView) renderBookLine(book models.Book, selected bool) string {
+	// Check if we have image support and covers are enabled
+	if v.showCovers && v.termMode != utils.TermModeNone {
+		return v.renderBookLineWithThumbnail(book, selected)
+	}
+	return v.renderBookLineTextOnly(book, selected)
+}
+
+// renderBookLineTextOnly renders a compact text-only book line
+func (v *LibraryView) renderBookLineTextOnly(book models.Book, selected bool) string {
 	// Queue position or favorite star indicator
 	indicator := "   "
 	if v.config != nil {
@@ -580,7 +682,7 @@ func (v *LibraryView) renderBookLine(book models.Book, selected bool) string {
 	indicatorWidth := 3 // "★ " or "  " or "99 "
 	maxWidth := v.width - 4 - badgeWidth - indicatorWidth
 	line := fmt.Sprintf("%s - %s%s", title, author, series)
-	if len(line) > maxWidth {
+	if len(line) > maxWidth && maxWidth > 3 {
 		line = line[:maxWidth-3] + "..."
 	}
 
@@ -588,6 +690,96 @@ func (v *LibraryView) renderBookLine(book models.Book, selected bool) string {
 		return styles.ListItemSelected.Width(v.width).Render("▸ " + indicator + badge + line)
 	}
 	return styles.ListItem.Render("  " + indicator + badge + line)
+}
+
+// renderBookLineWithThumbnail renders a book line with cover thumbnail
+func (v *LibraryView) renderBookLineWithThumbnail(book models.Book, selected bool) string {
+	// Left column: Thumbnail or placeholder
+	var leftCol string
+	if renderedImg, ok := v.coverCache[book.ID]; ok && renderedImg != "" {
+		leftCol = lipgloss.NewStyle().
+			Width(thumbWidth).
+			Height(thumbHeight).
+			Render(renderedImg)
+	} else {
+		// Placeholder while loading
+		placeholder := styles.MutedText.Render("[   ]")
+		leftCol = lipgloss.NewStyle().
+			Width(thumbWidth).
+			Height(thumbHeight).
+			Align(lipgloss.Center, lipgloss.Center).
+			Render(placeholder)
+	}
+
+	// Right column: Book details
+	rightColWidth := v.width - thumbWidth - 6
+
+	// Build book info
+	titleStyle := styles.BookTitle
+	if selected {
+		titleStyle = titleStyle.Bold(true)
+	}
+	title := titleStyle.Render(book.Title)
+	author := styles.BookAuthor.Render("by " + book.Author)
+
+	// Series info
+	series := ""
+	if book.Series != "" {
+		seriesText := book.Series
+		if book.SeriesIndex > 0 {
+			seriesText += fmt.Sprintf(" #%.0f", book.SeriesIndex)
+		}
+		series = styles.MutedText.Render(seriesText)
+	}
+
+	// Favorite/queue indicator
+	indicator := ""
+	if v.config != nil {
+		if queuePos := v.config.GetQueuePosition(book.ID); queuePos > 0 {
+			indicator = styles.SecondaryText.Render(fmt.Sprintf("#%d in queue", queuePos))
+		} else if v.config.IsFavorite(book.ID) {
+			indicator = styles.SecondaryText.Render("★ Favorite")
+		}
+	}
+
+	// Content type badge
+	badge := ""
+	if v.contentType == "" && book.ContentType != "" {
+		if book.IsComic() {
+			badge = styles.BadgeComic.Render("Comic")
+		} else {
+			badge = styles.BadgeBook.Render("Book")
+		}
+	}
+
+	// Combine details vertically
+	details := lipgloss.JoinVertical(lipgloss.Left, title, author)
+	if series != "" {
+		details = lipgloss.JoinVertical(lipgloss.Left, details, series)
+	}
+	if indicator != "" {
+		details = lipgloss.JoinVertical(lipgloss.Left, details, indicator)
+	}
+	if badge != "" {
+		details = lipgloss.JoinVertical(lipgloss.Left, details, badge)
+	}
+
+	rightCol := lipgloss.NewStyle().
+		Width(rightColWidth).
+		Height(thumbHeight).
+		Padding(0, 1).
+		Render(details)
+
+	// Join columns
+	fullLine := lipgloss.JoinHorizontal(lipgloss.Top, leftCol, rightCol)
+
+	// Selection styling
+	selector := "  "
+	if selected {
+		selector = "▸ "
+		return styles.ListItemSelected.Width(v.width).Render(selector + fullLine)
+	}
+	return styles.ListItem.Render(selector + fullLine)
 }
 
 // renderFooter renders the footer help
@@ -803,14 +995,26 @@ func (v *LibraryView) updateOffset() {
 // visibleLines returns the number of visible book lines
 func (v *LibraryView) visibleLines() int {
 	// Account for header, footer, and margins
-	lines := v.height - 5
+	availableHeight := v.height - 5
 	if v.searchMode {
-		lines--
+		availableHeight--
 	}
-	if lines < 1 {
-		lines = 1
+
+	// If covers are shown, each item takes multiple lines
+	if v.showCovers && v.termMode != utils.TermModeNone {
+		// Add 1 for spacing between items
+		lines := availableHeight / (thumbHeight + 1)
+		if lines < 1 {
+			return 1
+		}
+		return lines
 	}
-	return lines
+
+	// Text-only mode: one line per book
+	if availableHeight < 1 {
+		return 1
+	}
+	return availableHeight
 }
 
 // hasNextPage returns true if there are more pages

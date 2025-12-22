@@ -4,30 +4,17 @@ import (
 	"bytes"
 	"fmt"
 	"image"
-	"image/color/palette"
-	"image/draw"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
-	"os"
 	"strings"
 
-	"github.com/BourgeoisBear/rasterm"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/justyntemme/webby-t/internal/api"
 	"github.com/justyntemme/webby-t/internal/ui/styles"
+	"github.com/justyntemme/webby-t/internal/ui/utils"
 	"github.com/justyntemme/webby-t/pkg/models"
-)
-
-// termImageMode represents the terminal's image display capability
-type termImageMode int
-
-const (
-	termModeNone termImageMode = iota
-	termModeKitty
-	termModeIterm
-	termModeSixel
 )
 
 // ComicView displays comic pages with image rendering
@@ -49,7 +36,7 @@ type ComicView struct {
 	imageLoaded bool
 
 	// Terminal capabilities
-	termMode termImageMode
+	termMode utils.TermImageMode
 
 	// Dimensions
 	width  int
@@ -58,37 +45,13 @@ type ComicView struct {
 
 // NewComicView creates a new comic viewer
 func NewComicView(client *api.Client) *ComicView {
-	// Detect terminal image mode
-	mode := detectTerminalMode()
-
 	return &ComicView{
 		client:      client,
 		currentPage: 1,
 		width:       80,
 		height:      24,
-		termMode:    mode,
+		termMode:    utils.DetectTerminalMode(),
 	}
-}
-
-// detectTerminalMode checks which image protocol the terminal supports
-func detectTerminalMode() termImageMode {
-	// Check for Kitty protocol support
-	if rasterm.IsKittyCapable() {
-		return termModeKitty
-	}
-
-	// Check for iTerm2 protocol support
-	if rasterm.IsItermCapable() {
-		return termModeIterm
-	}
-
-	// Check for Sixel support
-	if capable, _ := rasterm.IsSixelCapable(); capable {
-		return termModeSixel
-	}
-
-	// No image support
-	return termModeNone
 }
 
 // SetBook sets the comic to display
@@ -212,7 +175,7 @@ func (v *ComicView) View() string {
 			styles.ErrorStyle.Render("Error: "+v.err.Error()),
 		)
 		b.WriteString(content)
-	} else if v.termMode == termModeNone {
+	} else if v.termMode == utils.TermModeNone {
 		// No image protocol support
 		content := lipgloss.Place(
 			v.width,
@@ -280,41 +243,13 @@ func (v *ComicView) renderImage() string {
 		return styles.ErrorStyle.Render("Failed to decode image: " + err.Error())
 	}
 
-	// Render the image to terminal
-	var buf bytes.Buffer
-	var renderErr error
-
-	switch v.termMode {
-	case termModeKitty:
-		renderErr = rasterm.KittyWriteImage(&buf, img, rasterm.KittyImgOpts{})
-	case termModeIterm:
-		renderErr = rasterm.ItermWriteImage(&buf, img)
-	case termModeSixel:
-		// Sixel requires paletted image
-		paletted := imageToPaletted(img)
-		renderErr = rasterm.SixelWriteImage(os.Stdout, paletted)
-		// Sixel writes directly to stdout, return empty string
-		if renderErr != nil {
-			return styles.ErrorStyle.Render("Sixel error: " + renderErr.Error())
-		}
-		return ""
-	default:
-		return styles.MutedText.Render("No supported image protocol")
-	}
-
+	// Use shared utility to render the image
+	imgStr, renderErr := utils.RenderImageToString(img, v.termMode)
 	if renderErr != nil {
 		return styles.ErrorStyle.Render("Render error: " + renderErr.Error())
 	}
 
-	return buf.String()
-}
-
-// imageToPaletted converts an image to a paletted image for Sixel
-func imageToPaletted(img image.Image) *image.Paletted {
-	bounds := img.Bounds()
-	paletted := image.NewPaletted(bounds, palette.Plan9)
-	draw.Draw(paletted, bounds, img, bounds.Min, draw.Src)
-	return paletted
+	return imgStr
 }
 
 // renderFooter renders the footer help
