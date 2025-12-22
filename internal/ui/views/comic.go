@@ -126,7 +126,8 @@ func (v *ComicView) Update(msg tea.Msg) (View, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "esc":
-			return v, SwitchTo(ViewLibrary)
+			// Clear screen to remove any lingering images before switching views
+			return v, tea.Sequence(tea.ClearScreen, SwitchTo(ViewLibrary))
 		case "j", "down", "l", "right", "n", " ", "pgdown":
 			// Next page
 			if v.currentPage < v.pageCount {
