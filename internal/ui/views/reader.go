@@ -28,11 +28,18 @@ type ReaderView struct {
 	lineOffset int
 
 	// State
-	loading   bool
-	err       error
-	showTOC   bool
-	tocCursor int
-	textScale float64 // Current text scale (affects line width)
+	loading         bool
+	err             error
+	showTOC         bool
+	tocCursor       int
+	textScale       float64 // Current text scale (affects line width)
+	pendingPosition float64 // Position to restore after chapter loads (0-1)
+	hasPendingPos   bool    // Whether there's a pending position to restore
+
+	// Bookmarks
+	showBookmarks   bool
+	bookmarkCursor  int
+	bookmarkMsg     string // Temporary status message for bookmarks
 
 	// Dimensions
 	width  int
@@ -59,6 +66,8 @@ func (v *ReaderView) SetBook(book models.Book) {
 	v.content = ""
 	v.lines = nil
 	v.showTOC = false
+	v.pendingPosition = 0
+	v.hasPendingPos = false
 }
 
 // SavePositionOnExit saves the current position (called when leaving reader)
@@ -100,9 +109,17 @@ func (v *ReaderView) Init() tea.Cmd {
 func (v *ReaderView) Update(msg tea.Msg) (View, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Clear bookmark message on any key
+		v.bookmarkMsg = ""
+
 		// TOC mode
 		if v.showTOC {
 			return v.updateTOC(msg)
+		}
+
+		// Bookmarks mode
+		if v.showBookmarks {
+			return v.updateBookmarks(msg)
 		}
 
 		// Reader mode
@@ -145,6 +162,13 @@ func (v *ReaderView) Update(msg tea.Msg) (View, tea.Cmd) {
 		case "0":
 			// Reset text size to default
 			v.setTextScale(config.DefaultTextScale)
+		case "B":
+			// Add bookmark at current position
+			v.addBookmark()
+		case "b":
+			// Show bookmarks list
+			v.showBookmarks = true
+			v.bookmarkCursor = 0
 		}
 
 	case tocLoadedMsg:
@@ -167,8 +191,9 @@ func (v *ReaderView) Update(msg tea.Msg) (View, tea.Cmd) {
 			fmt.Sscanf(msg.position.Chapter, "%d", &chapterNum)
 			if chapterNum >= 0 && (len(v.chapters) == 0 || chapterNum < len(v.chapters)) {
 				v.chapter = chapterNum
-				// Calculate line offset from position percentage
-				// Will be applied after content loads
+				// Store position to restore after chapter loads
+				v.pendingPosition = msg.position.Position
+				v.hasPendingPos = true
 			}
 		}
 		// Load the chapter
@@ -184,6 +209,22 @@ func (v *ReaderView) Update(msg tea.Msg) (View, tea.Cmd) {
 		v.chapter = msg.chapter
 		v.wrapContent()
 		v.err = nil
+		// Restore saved position if available
+		if v.hasPendingPos && len(v.lines) > 0 {
+			v.lineOffset = int(v.pendingPosition * float64(len(v.lines)))
+			// Clamp to valid range
+			maxOffset := len(v.lines) - v.visibleLines()
+			if maxOffset < 0 {
+				maxOffset = 0
+			}
+			if v.lineOffset > maxOffset {
+				v.lineOffset = maxOffset
+			}
+			if v.lineOffset < 0 {
+				v.lineOffset = 0
+			}
+			v.hasPendingPos = false
+		}
 		return v, nil
 	}
 
@@ -222,6 +263,10 @@ func (v *ReaderView) View() string {
 
 	if v.showTOC {
 		return v.renderTOC()
+	}
+
+	if v.showBookmarks {
+		return v.renderBookmarks()
 	}
 
 	var b strings.Builder
@@ -394,10 +439,16 @@ func (v *ReaderView) renderFooter() string {
 	// Text scale indicator
 	scaleStr := fmt.Sprintf("%.0f%%", v.textScale*100)
 
+	// Show bookmark message if set
+	if v.bookmarkMsg != "" {
+		return styles.SecondaryText.Render(v.bookmarkMsg)
+	}
+
 	help := []string{
 		styles.HelpKey.Render("j/k") + styles.Help.Render(" scroll"),
 		styles.HelpKey.Render("n/p") + styles.Help.Render(" chapter"),
 		styles.HelpKey.Render("t") + styles.Help.Render(" toc"),
+		styles.HelpKey.Render("b/B") + styles.Help.Render(" marks"),
 		styles.HelpKey.Render("+/-") + styles.Help.Render(" size:"+scaleStr),
 		styles.HelpKey.Render("q") + styles.Help.Render(" back"),
 	}
@@ -602,4 +653,130 @@ func (v *ReaderView) setTextScale(scale float64) {
 	if v.content != "" {
 		v.wrapContent()
 	}
+}
+
+// addBookmark adds a bookmark at the current position
+func (v *ReaderView) addBookmark() {
+	if v.book == nil || v.config == nil {
+		return
+	}
+	chapterTitle := ""
+	if len(v.chapters) > v.chapter && v.chapter >= 0 {
+		chapterTitle = v.chapters[v.chapter].Title
+	}
+	position := float64(v.lineOffset) / float64(max(1, len(v.lines)))
+	err := v.config.AddBookmark(v.book.ID, v.book.Title, v.chapter, chapterTitle, position, "")
+	if err != nil {
+		v.bookmarkMsg = "Failed to add bookmark"
+	} else {
+		v.bookmarkMsg = "Bookmark added"
+	}
+}
+
+// updateBookmarks handles bookmarks list navigation
+func (v *ReaderView) updateBookmarks(msg tea.KeyMsg) (View, tea.Cmd) {
+	bookmarks := v.getBookmarksForCurrentBook()
+
+	switch msg.String() {
+	case "esc", "b", "q":
+		v.showBookmarks = false
+	case "j", "down":
+		if v.bookmarkCursor < len(bookmarks)-1 {
+			v.bookmarkCursor++
+		}
+	case "k", "up":
+		if v.bookmarkCursor > 0 {
+			v.bookmarkCursor--
+		}
+	case "g", "home":
+		v.bookmarkCursor = 0
+	case "G", "end":
+		if len(bookmarks) > 0 {
+			v.bookmarkCursor = len(bookmarks) - 1
+		}
+	case "enter":
+		// Navigate to selected bookmark
+		if v.bookmarkCursor < len(bookmarks) {
+			v.showBookmarks = false
+			return v, v.goToBookmark(bookmarks[v.bookmarkCursor])
+		}
+	case "d", "x":
+		// Delete selected bookmark
+		if v.bookmarkCursor < len(bookmarks) && v.config != nil {
+			_ = v.config.DeleteBookmark(bookmarks[v.bookmarkCursor].ID)
+			// Adjust cursor if needed
+			if v.bookmarkCursor >= len(bookmarks)-1 && v.bookmarkCursor > 0 {
+				v.bookmarkCursor--
+			}
+		}
+	}
+	return v, nil
+}
+
+// getBookmarksForCurrentBook returns bookmarks for the current book
+func (v *ReaderView) getBookmarksForCurrentBook() []config.Bookmark {
+	if v.book == nil || v.config == nil {
+		return nil
+	}
+	return v.config.GetBookmarksForBook(v.book.ID)
+}
+
+// goToBookmark navigates to a bookmark
+func (v *ReaderView) goToBookmark(bookmark config.Bookmark) tea.Cmd {
+	// Store position to restore after chapter loads
+	v.pendingPosition = bookmark.Position
+	v.hasPendingPos = true
+	return v.loadChapter(bookmark.Chapter)
+}
+
+// renderBookmarks renders the bookmarks overlay
+func (v *ReaderView) renderBookmarks() string {
+	var b strings.Builder
+
+	b.WriteString(styles.DialogTitle.Render("Bookmarks") + "\n\n")
+
+	bookmarks := v.getBookmarksForCurrentBook()
+
+	if len(bookmarks) == 0 {
+		b.WriteString(styles.MutedText.Render("No bookmarks for this book.\n\nPress B to add a bookmark."))
+	} else {
+		// Calculate visible range
+		maxVisible := v.height - 10
+		offset := 0
+		if v.bookmarkCursor >= maxVisible {
+			offset = v.bookmarkCursor - maxVisible + 1
+		}
+
+		for i := offset; i < min(offset+maxVisible, len(bookmarks)); i++ {
+			bm := bookmarks[i]
+			chapterLabel := fmt.Sprintf("Ch %d", bm.Chapter+1)
+			if bm.ChapterTitle != "" {
+				title := bm.ChapterTitle
+				if len(title) > 20 {
+					title = title[:17] + "..."
+				}
+				chapterLabel = fmt.Sprintf("Ch %d: %s", bm.Chapter+1, title)
+			}
+			progress := fmt.Sprintf("%.0f%%", bm.Position*100)
+			line := fmt.Sprintf("%s [%s]", chapterLabel, progress)
+
+			if i == v.bookmarkCursor {
+				b.WriteString(styles.ListItemSelected.Render("▸ "+line) + "\n")
+			} else {
+				b.WriteString(styles.ListItem.Render("  "+line) + "\n")
+			}
+		}
+	}
+
+	b.WriteString("\n" + styles.Help.Render("j/k navigate • enter go • d delete • esc close"))
+
+	dialog := styles.Dialog.Width(min(50, v.width-4)).Render(b.String())
+
+	return lipgloss.Place(
+		v.width,
+		v.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		dialog,
+	)
 }
