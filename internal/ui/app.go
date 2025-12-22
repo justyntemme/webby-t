@@ -35,6 +35,7 @@ type App struct {
 	collectionsView views.View
 	uploadView      views.View
 	comicView       views.View
+	bookDetailsView views.View
 
 	// Error/status message
 	err       error
@@ -45,6 +46,9 @@ type App struct {
 // NewApp creates a new application instance
 func NewApp(cfg *config.Config) *App {
 	client := api.NewClient(cfg.ServerURL, cfg.Token)
+
+	// Apply saved theme from config
+	styles.SetCurrentTheme(cfg.GetThemeName())
 
 	app := &App{
 		config:      cfg,
@@ -62,6 +66,7 @@ func NewApp(cfg *config.Config) *App {
 	app.collectionsView = views.NewCollectionsView(client)
 	app.uploadView = views.NewUploadView(client)
 	app.comicView = views.NewComicView(client)
+	app.bookDetailsView = views.NewBookDetailsView(client, cfg)
 
 	// If already authenticated, go to library
 	if cfg.IsAuthenticated() {
@@ -94,6 +99,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.collectionsView.SetSize(msg.Width, msg.Height)
 		a.uploadView.SetSize(msg.Width, msg.Height)
 		a.comicView.SetSize(msg.Width, msg.Height)
+		a.bookDetailsView.SetSize(msg.Width, msg.Height)
 		return a, nil
 
 	case tea.KeyMsg:
@@ -132,6 +138,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.currentView == views.ViewComic {
 				return a.switchView(views.ViewLibrary)
 			}
+			if a.currentView == views.ViewBookDetails {
+				return a.switchView(views.ViewLibrary)
+			}
 		}
 
 	case views.LoginSuccessMsg:
@@ -156,6 +165,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.readerView.(*views.ReaderView).SetBook(msg.Book)
 		return a.switchView(views.ViewReader)
+
+	case views.ShowBookDetailsMsg:
+		a.bookDetailsView.(*views.BookDetailsView).SetBook(msg.Book)
+		return a.switchView(views.ViewBookDetails)
 
 	case views.ErrorMsg:
 		a.err = msg.Err
@@ -184,6 +197,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.uploadView, cmd = a.uploadView.Update(msg)
 	case views.ViewComic:
 		a.comicView, cmd = a.comicView.Update(msg)
+	case views.ViewBookDetails:
+		a.bookDetailsView, cmd = a.bookDetailsView.Update(msg)
 	}
 	cmds = append(cmds, cmd)
 
@@ -207,6 +222,8 @@ func (a *App) View() string {
 		content = a.uploadView.View()
 	case views.ViewComic:
 		content = a.comicView.View()
+	case views.ViewBookDetails:
+		content = a.bookDetailsView.View()
 	default:
 		content = "Unknown view"
 	}
@@ -254,6 +271,8 @@ func (a *App) getCurrentView() views.View {
 		return a.uploadView
 	case views.ViewComic:
 		return a.comicView
+	case views.ViewBookDetails:
+		return a.bookDetailsView
 	default:
 		return a.loginView
 	}
@@ -273,7 +292,9 @@ func (a *App) renderHelp() string {
 			styles.HelpKey.Render("Reader") + "\n" +
 			"  n/l     Next chapter\n" +
 			"  p/h     Previous chapter\n" +
-			"  t       Table of contents\n\n" +
+			"  t       Table of contents\n" +
+			"  B       Add bookmark\n" +
+			"  b       View bookmarks\n\n" +
 			styles.HelpKey.Render("Comic Viewer") + "\n" +
 			"  l/n     Next page\n" +
 			"  h/p     Previous page\n" +
@@ -283,6 +304,10 @@ func (a *App) renderHelp() string {
 			"  s       Sort\n" +
 			"  v       Filter (All/Books/Comics)\n" +
 			"  b/m     Books only / Comics only\n" +
+			"  A       Filter by author\n" +
+			"  E       Filter by series\n" +
+			"  x       Clear filter\n" +
+			"  i       Book details\n" +
 			"  Enter   Open book\n\n" +
 			styles.HelpKey.Render("General") + "\n" +
 			"  q       Quit/Back\n" +

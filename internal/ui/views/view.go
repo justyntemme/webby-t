@@ -18,6 +18,7 @@ const (
 	ViewUpload
 	ViewSettings
 	ViewComic
+	ViewBookDetails
 )
 
 // String returns the name of the view
@@ -41,6 +42,8 @@ func (v ViewType) String() string {
 		return "Settings"
 	case ViewComic:
 		return "Comic Viewer"
+	case ViewBookDetails:
+		return "Book Details"
 	default:
 		return "Unknown"
 	}
@@ -70,6 +73,11 @@ type OpenBookMsg struct {
 	Book models.Book
 }
 
+// ShowBookDetailsMsg is sent when requesting book details view
+type ShowBookDetailsMsg struct {
+	Book models.Book
+}
+
 // ErrorMsg is sent when an error occurs
 type ErrorMsg struct {
 	Err error
@@ -81,6 +89,11 @@ type ClearErrorMsg struct{}
 // SwitchViewMsg requests a view switch
 type SwitchViewMsg struct {
 	View ViewType
+}
+
+// ThemeChangedMsg is sent when the theme is changed
+type ThemeChangedMsg struct {
+	ThemeName string
 }
 
 // Helper functions to create messages
@@ -103,5 +116,12 @@ func ClearError() tea.Cmd {
 func SwitchTo(view ViewType) tea.Cmd {
 	return func() tea.Msg {
 		return SwitchViewMsg{View: view}
+	}
+}
+
+// NotifyThemeChanged creates a command to notify theme change
+func NotifyThemeChanged(themeName string) tea.Cmd {
+	return func() tea.Msg {
+		return ThemeChangedMsg{ThemeName: themeName}
 	}
 }

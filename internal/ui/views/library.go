@@ -73,6 +73,8 @@ type LibraryView struct {
 	queueMode        bool         // Show only reading queue
 	confirmDelete    bool         // Show delete confirmation
 	deleteBook       *models.Book // Book pending deletion
+	filterAuthor     string       // Filter by author name
+	filterSeries     string       // Filter by series name
 
 	// Sorting
 	sortBy    sortField
@@ -320,6 +322,57 @@ func (v *LibraryView) Update(msg tea.Msg) (View, tea.Cmd) {
 				}
 				return v, v.loadBooks()
 			}
+		case "A":
+			// Filter by selected book's author
+			if len(v.books) > 0 && v.cursor < len(v.books) {
+				book := v.books[v.cursor]
+				if book.Author != "" {
+					v.filterAuthor = book.Author
+					v.filterSeries = ""
+					v.page = 1
+					v.cursor = 0
+					v.offset = 0
+					return v, v.loadBooks()
+				}
+			}
+		case "E":
+			// Filter by selected book's series (E for sEries, since S is sort)
+			if len(v.books) > 0 && v.cursor < len(v.books) {
+				book := v.books[v.cursor]
+				if book.Series != "" {
+					v.filterSeries = book.Series
+					v.filterAuthor = ""
+					v.page = 1
+					v.cursor = 0
+					v.offset = 0
+					return v, v.loadBooks()
+				}
+			}
+		case "x":
+			// Clear author/series filter
+			if v.filterAuthor != "" || v.filterSeries != "" {
+				v.filterAuthor = ""
+				v.filterSeries = ""
+				v.page = 1
+				v.cursor = 0
+				v.offset = 0
+				return v, v.loadBooks()
+			}
+		case "i":
+			// Show book details
+			if len(v.books) > 0 && v.cursor < len(v.books) {
+				book := v.books[v.cursor]
+				return v, func() tea.Msg {
+					return ShowBookDetailsMsg{Book: book}
+				}
+			}
+		case "T":
+			// Cycle through themes
+			newTheme := styles.NextTheme()
+			if v.config != nil {
+				_ = v.config.SetTheme(newTheme)
+			}
+			return v, NotifyThemeChanged(newTheme)
 		}
 
 	case booksLoadedMsg:
@@ -439,6 +492,10 @@ func (v *LibraryView) renderHeader() string {
 		titleText = " ★ Favorites "
 	} else if v.recentlyReadMode {
 		titleText = " Recently Read "
+	} else if v.filterAuthor != "" {
+		titleText = " Author: " + v.filterAuthor + " "
+	} else if v.filterSeries != "" {
+		titleText = " Series: " + v.filterSeries + " "
 	} else {
 		switch v.contentType {
 		case models.ContentTypeBook:
@@ -545,19 +602,40 @@ func (v *LibraryView) renderFooter() string {
 			styles.HelpKey.Render("W") + styles.Help.Render(" exit"),
 			styles.HelpKey.Render("q") + styles.Help.Render(" quit"),
 		}
+	} else if v.filterAuthor != "" || v.filterSeries != "" {
+		// Show filter-specific help when a filter is active
+		help = []string{
+			styles.HelpKey.Render("j/k") + styles.Help.Render(" nav"),
+			styles.HelpKey.Render("enter") + styles.Help.Render(" open"),
+			styles.HelpKey.Render("x") + styles.Help.Render(" clear filter"),
+			styles.HelpKey.Render("f") + styles.Help.Render(" fav"),
+			styles.HelpKey.Render("w") + styles.Help.Render(" queue"),
+			styles.HelpKey.Render("q") + styles.Help.Render(" quit"),
+		}
 	} else {
 		help = []string{
 			styles.HelpKey.Render("j/k") + styles.Help.Render(" nav"),
 			styles.HelpKey.Render("enter") + styles.Help.Render(" open"),
+			styles.HelpKey.Render("i") + styles.Help.Render(" info"),
 			styles.HelpKey.Render("/") + styles.Help.Render(" search"),
 			styles.HelpKey.Render("f") + styles.Help.Render(" fav"),
 			styles.HelpKey.Render("w") + styles.Help.Render(" queue"),
-			styles.HelpKey.Render("W") + styles.Help.Render(" list"),
 			styles.HelpKey.Render("d") + styles.Help.Render(" del"),
 			styles.HelpKey.Render("q") + styles.Help.Render(" quit"),
 		}
 	}
-	return strings.Join(help, "  ")
+
+	// Add theme indicator
+	themeName := styles.CurrentTheme().Name
+	themeIndicator := styles.MutedText.Render(" [Theme: " + themeName + "] ") + styles.HelpKey.Render("T") + styles.Help.Render(" change")
+
+	helpText := strings.Join(help, "  ")
+	gap := v.width - lipgloss.Width(helpText) - lipgloss.Width(themeIndicator)
+	if gap < 0 {
+		gap = 0
+	}
+
+	return helpText + strings.Repeat(" ", gap) + themeIndicator
 }
 
 // renderDeleteConfirmation renders the delete confirmation dialog
@@ -667,6 +745,28 @@ func (v *LibraryView) loadBooks() tea.Cmd {
 				}
 			}
 
+			return booksLoadedMsg{books: filteredBooks, total: len(filteredBooks)}
+		}
+
+		// Filter by author if filter is active
+		if v.filterAuthor != "" {
+			filteredBooks := make([]models.Book, 0)
+			for _, book := range resp.Books {
+				if book.Author == v.filterAuthor {
+					filteredBooks = append(filteredBooks, book)
+				}
+			}
+			return booksLoadedMsg{books: filteredBooks, total: len(filteredBooks)}
+		}
+
+		// Filter by series if filter is active
+		if v.filterSeries != "" {
+			filteredBooks := make([]models.Book, 0)
+			for _, book := range resp.Books {
+				if book.Series == v.filterSeries {
+					filteredBooks = append(filteredBooks, book)
+				}
+			}
 			return booksLoadedMsg{books: filteredBooks, total: len(filteredBooks)}
 		}
 

@@ -21,6 +21,18 @@ type RecentlyReadEntry struct {
 	OpenedAt  time.Time `json:"opened_at"`
 }
 
+// Bookmark represents a saved position in a book
+type Bookmark struct {
+	ID        string    `json:"id"`
+	BookID    string    `json:"book_id"`
+	BookTitle string    `json:"book_title"`
+	Chapter   int       `json:"chapter"`
+	ChapterTitle string `json:"chapter_title"`
+	Position  float64   `json:"position"` // 0-1 within chapter
+	Note      string    `json:"note,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // Config holds the application configuration
 type Config struct {
 	ServerURL    string              `json:"server_url"`
@@ -30,6 +42,8 @@ type Config struct {
 	TextScale    float64             `json:"text_scale,omitempty"`    // 0.5-2.0, default 1.0
 	Favorites    []string            `json:"favorites,omitempty"`     // List of favorited book IDs
 	ReadingQueue []string            `json:"reading_queue,omitempty"` // Ordered list of books to read
+	Bookmarks    []Bookmark          `json:"bookmarks,omitempty"`     // Saved bookmarks
+	Theme        string              `json:"theme,omitempty"`         // Color theme name (dark, light, etc.)
 
 	// Path to config file (not persisted)
 	path string `json:"-"`
@@ -273,6 +287,69 @@ func (c *Config) SetTextScale(scale float64) error {
 // AdjustTextScale adjusts text scale by delta and saves
 func (c *Config) AdjustTextScale(delta float64) error {
 	return c.SetTextScale(c.GetTextScale() + delta)
+}
+
+// AddBookmark adds a new bookmark and saves
+func (c *Config) AddBookmark(bookID, bookTitle string, chapter int, chapterTitle string, position float64, note string) error {
+	bookmark := Bookmark{
+		ID:           generateBookmarkID(),
+		BookID:       bookID,
+		BookTitle:    bookTitle,
+		Chapter:      chapter,
+		ChapterTitle: chapterTitle,
+		Position:     position,
+		Note:         note,
+		CreatedAt:    time.Now(),
+	}
+	c.Bookmarks = append(c.Bookmarks, bookmark)
+	return c.Save()
+}
+
+// GetBookmarks returns all bookmarks
+func (c *Config) GetBookmarks() []Bookmark {
+	return c.Bookmarks
+}
+
+// GetBookmarksForBook returns bookmarks for a specific book
+func (c *Config) GetBookmarksForBook(bookID string) []Bookmark {
+	var bookmarks []Bookmark
+	for _, b := range c.Bookmarks {
+		if b.BookID == bookID {
+			bookmarks = append(bookmarks, b)
+		}
+	}
+	return bookmarks
+}
+
+// DeleteBookmark removes a bookmark by ID and saves
+func (c *Config) DeleteBookmark(bookmarkID string) error {
+	newBookmarks := make([]Bookmark, 0, len(c.Bookmarks))
+	for _, b := range c.Bookmarks {
+		if b.ID != bookmarkID {
+			newBookmarks = append(newBookmarks, b)
+		}
+	}
+	c.Bookmarks = newBookmarks
+	return c.Save()
+}
+
+// generateBookmarkID creates a unique bookmark ID
+func generateBookmarkID() string {
+	return time.Now().Format("20060102150405.000000")
+}
+
+// GetThemeName returns the configured theme name, defaulting to "dark"
+func (c *Config) GetThemeName() string {
+	if c.Theme == "" {
+		return "dark"
+	}
+	return c.Theme
+}
+
+// SetTheme sets the theme name and saves
+func (c *Config) SetTheme(themeName string) error {
+	c.Theme = themeName
+	return c.Save()
 }
 
 // getConfigPath returns the path to the config file
