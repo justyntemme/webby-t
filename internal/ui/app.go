@@ -58,7 +58,7 @@ func NewApp(cfg *config.Config) *App {
 	// Initialize views
 	app.loginView = views.NewLoginView(client, cfg)
 	app.libraryView = views.NewLibraryView(client, cfg)
-	app.readerView = views.NewReaderView(client)
+	app.readerView = views.NewReaderView(client, cfg)
 	app.collectionsView = views.NewCollectionsView(client)
 	app.uploadView = views.NewUploadView(client)
 	app.comicView = views.NewComicView(client)

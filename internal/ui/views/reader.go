@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/justyntemme/webby-t/internal/api"
+	"github.com/justyntemme/webby-t/internal/config"
 	"github.com/justyntemme/webby-t/internal/ui/styles"
 	"github.com/justyntemme/webby-t/pkg/models"
 )
@@ -14,6 +15,7 @@ import (
 // ReaderView displays book content
 type ReaderView struct {
 	client *api.Client
+	config *config.Config
 
 	// Current book
 	book     *models.Book
@@ -26,10 +28,11 @@ type ReaderView struct {
 	lineOffset int
 
 	// State
-	loading  bool
-	err      error
-	showTOC  bool
+	loading   bool
+	err       error
+	showTOC   bool
 	tocCursor int
+	textScale float64 // Current text scale (affects line width)
 
 	// Dimensions
 	width  int
@@ -37,11 +40,13 @@ type ReaderView struct {
 }
 
 // NewReaderView creates a new reader view
-func NewReaderView(client *api.Client) *ReaderView {
+func NewReaderView(client *api.Client, cfg *config.Config) *ReaderView {
 	return &ReaderView{
-		client: client,
-		width:  80,
-		height: 24,
+		client:    client,
+		config:    cfg,
+		textScale: cfg.GetTextScale(),
+		width:     80,
+		height:    24,
 	}
 }
 
@@ -131,6 +136,15 @@ func (v *ReaderView) Update(msg tea.Msg) (View, tea.Cmd) {
 		case " ":
 			// Space for page down
 			v.scroll(v.visibleLines() - 2)
+		case "+", "=":
+			// Increase text size (= is unshifted + on most keyboards)
+			v.adjustTextScale(config.TextScaleStep)
+		case "-", "_":
+			// Decrease text size
+			v.adjustTextScale(-config.TextScaleStep)
+		case "0":
+			// Reset text size to default
+			v.setTextScale(config.DefaultTextScale)
 		}
 
 	case tocLoadedMsg:
@@ -300,10 +314,14 @@ func (v *ReaderView) renderHeader() string {
 
 // renderFooter renders the reader footer
 func (v *ReaderView) renderFooter() string {
+	// Text scale indicator
+	scaleStr := fmt.Sprintf("%.0f%%", v.textScale*100)
+
 	help := []string{
 		styles.HelpKey.Render("j/k") + styles.Help.Render(" scroll"),
 		styles.HelpKey.Render("n/p") + styles.Help.Render(" chapter"),
 		styles.HelpKey.Render("t") + styles.Help.Render(" toc"),
+		styles.HelpKey.Render("+/-") + styles.Help.Render(" size:"+scaleStr),
 		styles.HelpKey.Render("q") + styles.Help.Render(" back"),
 	}
 	return strings.Join(help, "  ")
@@ -354,7 +372,17 @@ func (v *ReaderView) renderTOC() string {
 // wrapContent wraps content to fit the terminal width
 func (v *ReaderView) wrapContent() {
 	v.lines = nil
-	maxWidth := v.width - 4 // Account for padding
+	// Apply text scale to width: larger scale = narrower lines (simulates bigger text)
+	// Scale of 1.0 = full width, 2.0 = half width, 0.5 = full width (capped)
+	baseWidth := v.width - 4 // Account for padding
+	scaledWidth := int(float64(baseWidth) / v.textScale)
+	if scaledWidth < 20 {
+		scaledWidth = 20 // Minimum readable width
+	}
+	if scaledWidth > baseWidth {
+		scaledWidth = baseWidth
+	}
+	maxWidth := scaledWidth
 
 	for _, paragraph := range strings.Split(v.content, "\n") {
 		if paragraph == "" {
@@ -470,4 +498,31 @@ func (v *ReaderView) savePosition() {
 	}
 	position := float64(v.lineOffset) / float64(max(1, len(v.lines)))
 	v.client.SavePosition(v.book.ID, fmt.Sprintf("%d", v.chapter), position)
+}
+
+// adjustTextScale changes text scale by delta
+func (v *ReaderView) adjustTextScale(delta float64) {
+	v.setTextScale(v.textScale + delta)
+}
+
+// setTextScale sets the text scale and rewraps content
+func (v *ReaderView) setTextScale(scale float64) {
+	if scale < config.MinTextScale {
+		scale = config.MinTextScale
+	}
+	if scale > config.MaxTextScale {
+		scale = config.MaxTextScale
+	}
+	if scale == v.textScale {
+		return
+	}
+	v.textScale = scale
+	// Save to config
+	if v.config != nil {
+		_ = v.config.SetTextScale(scale)
+	}
+	// Rewrap content with new scale
+	if v.content != "" {
+		v.wrapContent()
+	}
 }

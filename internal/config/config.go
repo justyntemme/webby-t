@@ -27,10 +27,18 @@ type Config struct {
 	Token        string              `json:"token,omitempty"`
 	Username     string              `json:"username,omitempty"`
 	RecentlyRead []RecentlyReadEntry `json:"recently_read,omitempty"`
+	TextScale    float64             `json:"text_scale,omitempty"` // 0.5-2.0, default 1.0
 
 	// Path to config file (not persisted)
 	path string `json:"-"`
 }
+
+const (
+	DefaultTextScale = 1.0
+	MinTextScale     = 0.5
+	MaxTextScale     = 2.0
+	TextScaleStep    = 0.1
+)
 
 // Load loads configuration from the config file
 func Load() (*Config, error) {
@@ -128,6 +136,31 @@ func (c *Config) GetRecentlyReadIDs() []string {
 		ids[i] = entry.BookID
 	}
 	return ids
+}
+
+// GetTextScale returns the text scale, defaulting to 1.0
+func (c *Config) GetTextScale() float64 {
+	if c.TextScale < MinTextScale || c.TextScale > MaxTextScale {
+		return DefaultTextScale
+	}
+	return c.TextScale
+}
+
+// SetTextScale sets the text scale within bounds and saves
+func (c *Config) SetTextScale(scale float64) error {
+	if scale < MinTextScale {
+		scale = MinTextScale
+	}
+	if scale > MaxTextScale {
+		scale = MaxTextScale
+	}
+	c.TextScale = scale
+	return c.Save()
+}
+
+// AdjustTextScale adjusts text scale by delta and saves
+func (c *Config) AdjustTextScale(delta float64) error {
+	return c.SetTextScale(c.GetTextScale() + delta)
 }
 
 // getConfigPath returns the path to the config file
