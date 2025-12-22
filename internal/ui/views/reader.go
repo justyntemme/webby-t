@@ -281,8 +281,8 @@ func (v *ReaderView) SetSize(width, height int) {
 func (v *ReaderView) renderHeader() string {
 	// Book title
 	title := v.book.Title
-	if len(title) > v.width/2 {
-		title = title[:v.width/2-3] + "..."
+	if len(title) > v.width/3 {
+		title = title[:v.width/3-3] + "..."
 	}
 	titlePart := styles.ReaderHeader.Render(" " + title + " ")
 
@@ -290,15 +290,26 @@ func (v *ReaderView) renderHeader() string {
 	chapterTitle := ""
 	if len(v.chapters) > v.chapter && v.chapter >= 0 {
 		chapterTitle = v.chapters[v.chapter].Title
-		if len(chapterTitle) > 30 {
-			chapterTitle = chapterTitle[:27] + "..."
+		if len(chapterTitle) > 20 {
+			chapterTitle = chapterTitle[:17] + "..."
 		}
 	}
 	chapterPart := styles.Help.Render(fmt.Sprintf(" Ch %d/%d: %s ", v.chapter+1, len(v.chapters), chapterTitle))
 
-	// Progress
-	progress := v.calculateProgress()
-	progressPart := styles.ReaderProgress.Render(fmt.Sprintf(" %d%% ", progress))
+	// Chapter progress (within current chapter)
+	chapterProgress := v.calculateProgress()
+
+	// Book progress (based on chapters completed + current chapter progress)
+	bookProgress := v.calculateBookProgress()
+
+	// Progress bars - use compact format
+	barWidth := 10
+	chapterBar := renderProgressBar(barWidth, float64(chapterProgress)/100.0)
+	bookBar := renderProgressBar(barWidth, float64(bookProgress)/100.0)
+
+	progressPart := styles.MutedText.Render("Ch:") + chapterBar +
+		styles.MutedText.Render(" Book:") + bookBar +
+		styles.ReaderProgress.Render(fmt.Sprintf(" %d%%", bookProgress))
 
 	// Combine
 	left := titlePart + chapterPart
@@ -310,6 +321,72 @@ func (v *ReaderView) renderHeader() string {
 	}
 
 	return left + strings.Repeat(" ", gap) + right
+}
+
+// calculateBookProgress returns overall book progress as percentage
+func (v *ReaderView) calculateBookProgress() int {
+	if len(v.chapters) == 0 {
+		return 0
+	}
+	// Weight each chapter equally, add current chapter's progress
+	chapterWeight := 100.0 / float64(len(v.chapters))
+	completedChapters := float64(v.chapter) * chapterWeight
+	currentChapterProgress := float64(v.calculateProgress()) / 100.0 * chapterWeight
+	return int(completedChapters + currentChapterProgress)
+}
+
+// renderProgressBar renders a visual progress bar using Unicode block characters
+// width is the total character width, progress is 0.0-1.0
+func renderProgressBar(width int, progress float64) string {
+	if width < 3 {
+		width = 3
+	}
+	if progress < 0 {
+		progress = 0
+	}
+	if progress > 1 {
+		progress = 1
+	}
+
+	// Unicode block characters for smooth rendering
+	const (
+		empty    = "░"
+		filled   = "█"
+		partials = "▏▎▍▌▋▊▉" // 1/8 to 7/8 filled
+	)
+
+	// Calculate filled portion
+	filledWidth := progress * float64(width)
+	fullBlocks := int(filledWidth)
+	remainder := filledWidth - float64(fullBlocks)
+
+	var bar strings.Builder
+
+	// Full blocks
+	for i := 0; i < fullBlocks && i < width; i++ {
+		bar.WriteString(filled)
+	}
+
+	// Partial block (if there's room and remainder)
+	if fullBlocks < width && remainder > 0 {
+		partialIndex := int(remainder * 8)
+		if partialIndex > 7 {
+			partialIndex = 7
+		}
+		if partialIndex > 0 {
+			// Get the partial character
+			runes := []rune(partials)
+			bar.WriteRune(runes[partialIndex-1])
+			fullBlocks++
+		}
+	}
+
+	// Empty blocks
+	for i := fullBlocks; i < width; i++ {
+		bar.WriteString(empty)
+	}
+
+	return bar.String()
 }
 
 // renderFooter renders the reader footer
