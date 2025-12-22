@@ -54,7 +54,7 @@ func NewUploadView(client *api.Client) *UploadView {
 	}
 
 	fp := filepicker.New()
-	fp.AllowedTypes = []string{".epub"}
+	fp.AllowedTypes = []string{".epub", ".pdf", ".cbz", ".cbr"}
 	fp.CurrentDirectory = cwd
 	fp.ShowHidden = false
 	fp.ShowPermissions = false
@@ -123,7 +123,7 @@ func (v *UploadView) Update(msg tea.Msg) (View, tea.Cmd) {
 
 	// Check if user tried to select a disabled file
 	if didSelect, path := v.filepicker.DidSelectDisabledFile(msg); didSelect {
-		v.err = fmt.Errorf("cannot select %s (not an epub file)", path)
+		v.err = fmt.Errorf("cannot select %s (must be .epub, .pdf, .cbz, or .cbr)", path)
 		return v, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 			return clearErrorMsg{}
 		})
@@ -142,7 +142,7 @@ func (v *UploadView) View() string {
 	b.WriteString(styles.TitleBar.Render(" Add Book ") + "\n\n")
 
 	// Instructions
-	b.WriteString(styles.Help.Render("Navigate to an .epub file and press Enter to upload") + "\n")
+	b.WriteString(styles.Help.Render("Navigate to a file (.epub, .pdf, .cbz, .cbr) and press Enter to upload") + "\n")
 	b.WriteString(styles.Help.Render("Press Esc to go back") + "\n\n")
 
 	// Show uploading state

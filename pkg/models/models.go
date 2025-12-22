@@ -21,6 +21,7 @@ const (
 	FileFormatEPUB = "epub"
 	FileFormatPDF  = "pdf"
 	FileFormatCBZ  = "cbz"
+	FileFormatCBR  = "cbr"
 )
 
 // Book represents an ebook in the library
@@ -42,9 +43,9 @@ func (b *Book) IsComic() bool {
 	return b.ContentType == ContentTypeComic
 }
 
-// IsCBZ returns true if the book is a CBZ file
+// IsCBZ returns true if the book is a CBZ or CBR file (comic archive)
 func (b *Book) IsCBZ() bool {
-	return b.FileFormat == FileFormatCBZ
+	return b.FileFormat == FileFormatCBZ || b.FileFormat == FileFormatCBR
 }
 
 // Chapter represents a chapter in the table of contents
