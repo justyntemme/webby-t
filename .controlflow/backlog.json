@@ -1,0 +1,479 @@
+{
+  "projectPath": "/Users/justyntemme/Documents/code/webby-t",
+  "stories": [
+    {
+      "id": "STORY-008",
+      "title": "TUI Application Framework",
+      "description": "As a developer, I need a core TUI application framework using a Go terminal UI library (like bubbletea) that handles screen management, keyboard input, and component lifecycle so that all other features can be built on a solid foundation.",
+      "acceptanceCriteria": [
+        "Application starts and displays a responsive TUI interface",
+        "Keyboard input is captured and processed correctly",
+        "Screen resizes are handled gracefully",
+        "Application can be quit cleanly with 'q' or Ctrl+C",
+        "Basic navigation between views/screens works",
+        "Configuration file support for server URL and settings",
+        "Error states are displayed clearly to the user"
+      ],
+      "tasks": [
+        {
+          "id": "TASK-001",
+          "title": "Initialize Go module and project structure",
+          "description": "Create go.mod, directory structure (cmd/, internal/, pkg/), and main.go entry point",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-002",
+          "title": "Add bubbletea TUI framework dependency",
+          "description": "Add charmbracelet/bubbletea, bubbles, and lipgloss for TUI components and styling",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-003",
+          "title": "Create configuration management",
+          "description": "Implement config loading/saving for server URL, token storage, and user preferences using a config file (~/.config/webby-t/config.json)",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-004",
+          "title": "Implement base application model",
+          "description": "Create the main bubbletea Model with Init, Update, and View methods",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-005",
+          "title": "Create screen/view management system",
+          "description": "Implement view switching between login, library, reader, and settings screens",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-006",
+          "title": "Add keyboard input handling",
+          "description": "Set up key bindings and input processing for navigation and actions",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-007",
+          "title": "Implement error display component",
+          "description": "Create reusable error notification/display component for API and user errors",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-008",
+          "title": "Add graceful shutdown handling",
+          "description": "Handle Ctrl+C and cleanup on exit",
+          "status": "pending"
+        }
+      ],
+      "priority": 1,
+      "complexity": "high",
+      "status": "completed",
+      "createdAt": "2025-12-21T12:21:51-06:00",
+      "updatedAt": "2025-12-21T12:21:51-06:00"
+    },
+    {
+      "id": "STORY-001",
+      "title": "User Authentication and Session Management",
+      "description": "As a user, I want to log in to the webby server from the terminal so that I can access my personal ebook library. This includes login, registration, and token management with automatic refresh before expiry.",
+      "acceptanceCriteria": [
+        "User can log in with username and password",
+        "User can register a new account",
+        "JWT token is stored securely in local config",
+        "Token is automatically refreshed before expiry",
+        "User can log out and clear session",
+        "Invalid credentials show appropriate error message",
+        "Connection errors are handled gracefully"
+      ],
+      "tasks": [
+        {
+          "id": "TASK-009",
+          "title": "Create HTTP client for webby API",
+          "description": "Implement a reusable HTTP client with base URL configuration and JSON handling",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-010",
+          "title": "Implement authentication API methods",
+          "description": "Add login, register, refresh token, and get current user API calls",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-011",
+          "title": "Create login screen UI",
+          "description": "Build login form with username/password inputs and submit button",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-012",
+          "title": "Create registration screen UI",
+          "description": "Build registration form with username, email, password fields",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-013",
+          "title": "Implement token storage",
+          "description": "Save JWT token securely in config file and load on startup",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-014",
+          "title": "Add automatic token refresh",
+          "description": "Implement background token refresh before expiry",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-015",
+          "title": "Create logout functionality",
+          "description": "Clear stored token and return to login screen",
+          "status": "pending"
+        }
+      ],
+      "priority": 2,
+      "complexity": "medium",
+      "status": "completed",
+      "dependencies": [
+        "STORY-008"
+      ],
+      "createdAt": "2025-12-21T12:21:50-06:00",
+      "updatedAt": "2025-12-21T12:21:50-06:00"
+    },
+    {
+      "id": "STORY-002",
+      "title": "Browse and Select Ebooks",
+      "description": "As a user, I want to browse my ebook library with sorting, filtering, and search capabilities so that I can find and select a book to read. This includes viewing books by title, author, or series, with pagination support.",
+      "acceptanceCriteria": [
+        "Books are displayed in a scrollable list",
+        "List shows title, author, and series information",
+        "User can sort by title, author, series, or upload date",
+        "User can search books by title or author",
+        "Pagination works for large libraries",
+        "User can select a book to read",
+        "Books can be viewed grouped by author or series"
+      ],
+      "tasks": [
+        {
+          "id": "TASK-016",
+          "title": "Implement books API methods",
+          "description": "Add list books, get book, search, by-author, by-series API calls",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-017",
+          "title": "Create book list component",
+          "description": "Build scrollable list displaying book title, author, series",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-018",
+          "title": "Add sorting controls",
+          "description": "Implement sort by title/author/series/date with toggle for asc/desc",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-019",
+          "title": "Implement search functionality",
+          "description": "Add search input and filter books by query",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-020",
+          "title": "Add pagination support",
+          "description": "Handle page navigation for large libraries",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-021",
+          "title": "Create author/series grouping views",
+          "description": "Implement alternate views grouping books by author or series",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-022",
+          "title": "Implement book selection",
+          "description": "Handle enter key to open selected book in reader",
+          "status": "pending"
+        }
+      ],
+      "priority": 3,
+      "complexity": "medium",
+      "status": "completed",
+      "dependencies": [
+        "STORY-001"
+      ],
+      "createdAt": "2025-12-21T12:21:50-06:00",
+      "updatedAt": "2025-12-21T12:21:50-06:00"
+    },
+    {
+      "id": "STORY-003",
+      "title": "Read Ebooks with Vim-like Navigation",
+      "description": "As a user, I want to read ebooks in the terminal with vim-like keybindings (j/k for scroll, h/l or n/p for next/prev page, g/G for top/bottom, q to quit) so that I can navigate content efficiently. The reader should display plain text content with proper word wrapping.",
+      "acceptanceCriteria": [
+        "j/k keys scroll content up/down",
+        "h/l or n/p navigate between chapters",
+        "g jumps to top, G jumps to bottom",
+        "q quits reader and returns to library",
+        "Text wraps correctly to terminal width",
+        "Chapter title is displayed in header",
+        "Current position indicator shows progress",
+        "Page up/down keys work for larger scrolls"
+      ],
+      "tasks": [
+        {
+          "id": "TASK-023",
+          "title": "Implement reading API methods",
+          "description": "Add get TOC, get chapter text, get/save position API calls",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-024",
+          "title": "Create reader view component",
+          "description": "Build main reader display with header showing chapter title and progress",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-025",
+          "title": "Implement text content display",
+          "description": "Render chapter text with proper word wrapping to terminal width",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-026",
+          "title": "Add vertical scrolling with j/k",
+          "description": "Implement line-by-line scrolling within a chapter",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-027",
+          "title": "Add page scrolling",
+          "description": "Implement page up/down and half-page scrolling",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-028",
+          "title": "Implement chapter navigation",
+          "description": "Add h/l or n/p keys to move between chapters",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-029",
+          "title": "Add jump to top/bottom",
+          "description": "Implement g and G keys for start/end navigation",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-030",
+          "title": "Create progress indicator",
+          "description": "Show current position as percentage or line/total",
+          "status": "pending"
+        }
+      ],
+      "priority": 4,
+      "complexity": "high",
+      "status": "completed",
+      "dependencies": [
+        "STORY-002"
+      ],
+      "createdAt": "2025-12-21T12:21:51-06:00",
+      "updatedAt": "2025-12-21T12:21:51-06:00"
+    },
+    {
+      "id": "STORY-004",
+      "title": "Reading Position Persistence",
+      "description": "As a user, I want my reading position to be automatically saved and restored so that I can continue reading from where I left off across sessions and devices.",
+      "acceptanceCriteria": [
+        "Position is saved when leaving a chapter",
+        "Position is saved when quitting the reader",
+        "Opening a book restores last position",
+        "Position syncs with webby server",
+        "Works across different terminal sessions"
+      ],
+      "tasks": [
+        {
+          "id": "TASK-031",
+          "title": "Save position on chapter change",
+          "description": "Call save position API when navigating to different chapter",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-032",
+          "title": "Save position on reader exit",
+          "description": "Save current position when user quits reader",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-033",
+          "title": "Restore position on book open",
+          "description": "Fetch and apply saved position when opening a book",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-034",
+          "title": "Add periodic position auto-save",
+          "description": "Optionally save position periodically while reading",
+          "status": "pending"
+        }
+      ],
+      "priority": 5,
+      "complexity": "low",
+      "status": "completed",
+      "dependencies": [
+        "STORY-003"
+      ],
+      "createdAt": "2025-12-21T12:21:51-06:00",
+      "updatedAt": "2025-12-21T12:21:51-06:00"
+    },
+    {
+      "id": "STORY-005",
+      "title": "Table of Contents Navigation",
+      "description": "As a user, I want to view and navigate through a book's table of contents so that I can jump directly to specific chapters.",
+      "acceptanceCriteria": [
+        "User can press 't' to view table of contents",
+        "TOC shows chapter titles in a list",
+        "User can select a chapter to jump to it",
+        "Current chapter is highlighted in TOC",
+        "Escape returns to reading view"
+      ],
+      "tasks": [
+        {
+          "id": "TASK-035",
+          "title": "Create TOC overlay component",
+          "description": "Build modal/overlay showing chapter list",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-036",
+          "title": "Implement TOC navigation",
+          "description": "Allow scrolling and selection in TOC list",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-037",
+          "title": "Add current chapter highlighting",
+          "description": "Highlight the currently reading chapter in TOC",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-038",
+          "title": "Implement chapter jump",
+          "description": "Navigate to selected chapter on enter key",
+          "status": "pending"
+        }
+      ],
+      "priority": 6,
+      "complexity": "low",
+      "status": "completed",
+      "dependencies": [
+        "STORY-003"
+      ],
+      "createdAt": "2025-12-21T12:21:51-06:00",
+      "updatedAt": "2025-12-21T12:21:51-06:00"
+    },
+    {
+      "id": "STORY-006",
+      "title": "Collections Management",
+      "description": "As a user, I want to create, view, and manage collections so that I can organize my ebooks into custom categories.",
+      "acceptanceCriteria": [
+        "User can create new collections",
+        "User can view list of collections",
+        "User can add books to collections",
+        "User can remove books from collections",
+        "User can delete collections",
+        "Collections are displayed in library view"
+      ],
+      "tasks": [
+        {
+          "id": "TASK-039",
+          "title": "Implement collections API methods",
+          "description": "Add create, list, get, update, delete collection API calls",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-040",
+          "title": "Create collections list view",
+          "description": "Display user's collections in library",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-041",
+          "title": "Implement create collection dialog",
+          "description": "Modal for entering new collection name",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-042",
+          "title": "Add book-to-collection management",
+          "description": "UI for adding/removing books from collections",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-043",
+          "title": "Implement collection filtering",
+          "description": "Filter library view by selected collection",
+          "status": "pending"
+        }
+      ],
+      "priority": 7,
+      "complexity": "medium",
+      "status": "completed",
+      "dependencies": [
+        "STORY-002"
+      ],
+      "createdAt": "2025-12-21T12:21:51-06:00",
+      "updatedAt": "2025-12-21T12:21:51-06:00"
+    },
+    {
+      "id": "STORY-007",
+      "title": "Book Sharing",
+      "description": "As a user, I want to share books with other users and view books shared with me so that I can collaborate with friends and family.",
+      "acceptanceCriteria": [
+        "User can search for other users",
+        "User can share a book with another user",
+        "User can view books shared with them",
+        "User can unshare books they own",
+        "Shared books appear in library with indicator"
+      ],
+      "tasks": [
+        {
+          "id": "TASK-044",
+          "title": "Implement sharing API methods",
+          "description": "Add share, unshare, get shares, get shared books API calls",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-045",
+          "title": "Create user search component",
+          "description": "Search input to find users to share with",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-046",
+          "title": "Implement share book dialog",
+          "description": "UI for selecting user and sharing a book",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-047",
+          "title": "Add shared books indicator",
+          "description": "Show visual indicator for shared books in library",
+          "status": "pending"
+        },
+        {
+          "id": "TASK-048",
+          "title": "Create shared-with-me view",
+          "description": "Filter/view for books shared by others",
+          "status": "pending"
+        }
+      ],
+      "priority": 8,
+      "complexity": "medium",
+      "status": "completed",
+      "dependencies": [
+        "STORY-002"
+      ],
+      "createdAt": "2025-12-21T12:21:51-06:00",
+      "updatedAt": "2025-12-21T12:21:51-06:00"
+    }
+  ],
+  "lastUpdated": "2025-12-21T12:35:53-06:00",
+  "nextStoryId": 9,
+  "nextTaskId": 49
+}
