@@ -10,6 +10,19 @@ type User struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// Content type constants
+const (
+	ContentTypeBook  = "book"
+	ContentTypeComic = "comic"
+)
+
+// File format constants
+const (
+	FileFormatEPUB = "epub"
+	FileFormatPDF  = "pdf"
+	FileFormatCBZ  = "cbz"
+)
+
 // Book represents an ebook in the library
 type Book struct {
 	ID          string    `json:"id"`
@@ -19,7 +32,19 @@ type Book struct {
 	Series      string    `json:"series,omitempty"`
 	SeriesIndex float64   `json:"series_index,omitempty"`
 	FileSize    int64     `json:"file_size"`
+	ContentType string    `json:"content_type"`
+	FileFormat  string    `json:"file_format,omitempty"`
 	UploadedAt  time.Time `json:"uploaded_at"`
+}
+
+// IsComic returns true if the book is a comic
+func (b *Book) IsComic() bool {
+	return b.ContentType == ContentTypeComic
+}
+
+// IsCBZ returns true if the book is a CBZ file
+func (b *Book) IsCBZ() bool {
+	return b.FileFormat == FileFormatCBZ
 }
 
 // Chapter represents a chapter in the table of contents

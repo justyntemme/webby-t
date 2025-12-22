@@ -17,6 +17,7 @@ const (
 	ViewCollections
 	ViewUpload
 	ViewSettings
+	ViewComic
 )
 
 // String returns the name of the view
@@ -38,6 +39,8 @@ func (v ViewType) String() string {
 		return "Upload"
 	case ViewSettings:
 		return "Settings"
+	case ViewComic:
+		return "Comic Viewer"
 	default:
 		return "Unknown"
 	}

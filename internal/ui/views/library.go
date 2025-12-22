@@ -71,6 +71,9 @@ type LibraryView struct {
 	sortBy    sortField
 	sortAsc   bool
 
+	// Content type filter ("", "book", or "comic")
+	contentType string
+
 	// Pagination
 	page      int
 	pageSize  int
@@ -194,6 +197,36 @@ func (v *LibraryView) Update(msg tea.Msg) (View, tea.Cmd) {
 		case "a":
 			// Add/upload book
 			return v, SwitchTo(ViewUpload)
+		case "b":
+			// Filter books only
+			if v.contentType == models.ContentTypeBook {
+				v.contentType = "" // Toggle off
+			} else {
+				v.contentType = models.ContentTypeBook
+			}
+			v.page = 1
+			return v, v.loadBooks()
+		case "m":
+			// Filter comics only
+			if v.contentType == models.ContentTypeComic {
+				v.contentType = "" // Toggle off
+			} else {
+				v.contentType = models.ContentTypeComic
+			}
+			v.page = 1
+			return v, v.loadBooks()
+		case "v":
+			// Cycle through content types: all -> books -> comics -> all
+			switch v.contentType {
+			case "":
+				v.contentType = models.ContentTypeBook
+			case models.ContentTypeBook:
+				v.contentType = models.ContentTypeComic
+			case models.ContentTypeComic:
+				v.contentType = ""
+			}
+			v.page = 1
+			return v, v.loadBooks()
 		}
 
 	case booksLoadedMsg:
@@ -291,7 +324,15 @@ func (v *LibraryView) SetSize(width, height int) {
 
 // renderHeader renders the header bar
 func (v *LibraryView) renderHeader() string {
-	title := styles.TitleBar.Render(" Library ")
+	// Title based on content type filter
+	titleText := " Library "
+	switch v.contentType {
+	case models.ContentTypeBook:
+		titleText = " Books "
+	case models.ContentTypeComic:
+		titleText = " Comics "
+	}
+	title := styles.TitleBar.Render(titleText)
 
 	// Sort indicator
 	sortDir := "↑"
@@ -327,7 +368,17 @@ func (v *LibraryView) renderHeader() string {
 
 // renderBookLine renders a single book line
 func (v *LibraryView) renderBookLine(book models.Book, selected bool) string {
-	// Format: [cursor] Title - Author (Series #N)
+	// Content type badge (only show when viewing "all")
+	badge := ""
+	if v.contentType == "" && book.ContentType != "" {
+		if book.IsComic() {
+			badge = styles.BadgeComic.Render("C") + " "
+		} else {
+			badge = styles.BadgeBook.Render("B") + " "
+		}
+	}
+
+	// Format: [badge] Title - Author (Series #N)
 	title := book.Title
 	author := book.Author
 	series := ""
@@ -339,17 +390,21 @@ func (v *LibraryView) renderBookLine(book models.Book, selected bool) string {
 		series += ")"
 	}
 
-	// Truncate if needed
-	maxWidth := v.width - 4
+	// Truncate if needed (account for badge width)
+	badgeWidth := 0
+	if badge != "" {
+		badgeWidth = 4 // "[X] " width
+	}
+	maxWidth := v.width - 4 - badgeWidth
 	line := fmt.Sprintf("%s - %s%s", title, author, series)
 	if len(line) > maxWidth {
 		line = line[:maxWidth-3] + "..."
 	}
 
 	if selected {
-		return styles.ListItemSelected.Width(v.width).Render("▸ " + line)
+		return styles.ListItemSelected.Width(v.width).Render("▸ " + badge + line)
 	}
-	return styles.ListItem.Render("  " + line)
+	return styles.ListItem.Render("  " + badge + line)
 }
 
 // renderFooter renders the footer help
@@ -359,6 +414,7 @@ func (v *LibraryView) renderFooter() string {
 		styles.HelpKey.Render("enter") + styles.Help.Render(" open"),
 		styles.HelpKey.Render("/") + styles.Help.Render(" search"),
 		styles.HelpKey.Render("s") + styles.Help.Render(" sort"),
+		styles.HelpKey.Render("v") + styles.Help.Render(" filter"),
 		styles.HelpKey.Render("a") + styles.Help.Render(" add"),
 		styles.HelpKey.Render("c") + styles.Help.Render(" collections"),
 		styles.HelpKey.Render("q") + styles.Help.Render(" quit"),
@@ -373,7 +429,7 @@ func (v *LibraryView) loadBooks() tea.Cmd {
 		if !v.sortAsc {
 			order = "desc"
 		}
-		resp, err := v.client.ListBooks(v.page, v.pageSize, v.sortBy.String(), order, v.searchInput.Value())
+		resp, err := v.client.ListBooks(v.page, v.pageSize, v.sortBy.String(), order, v.searchInput.Value(), v.contentType)
 		if err != nil {
 			return booksLoadedMsg{err: err}
 		}

@@ -34,6 +34,7 @@ type App struct {
 	readerView      views.View
 	collectionsView views.View
 	uploadView      views.View
+	comicView       views.View
 
 	// Error/status message
 	err       error
@@ -60,6 +61,7 @@ func NewApp(cfg *config.Config) *App {
 	app.readerView = views.NewReaderView(client)
 	app.collectionsView = views.NewCollectionsView(client)
 	app.uploadView = views.NewUploadView(client)
+	app.comicView = views.NewComicView(client)
 
 	// If already authenticated, go to library
 	if cfg.IsAuthenticated() {
@@ -91,14 +93,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.readerView.SetSize(msg.Width, msg.Height)
 		a.collectionsView.SetSize(msg.Width, msg.Height)
 		a.uploadView.SetSize(msg.Width, msg.Height)
+		a.comicView.SetSize(msg.Width, msg.Height)
 		return a, nil
 
 	case tea.KeyMsg:
 		// Global key handling
 		switch {
 		case key.Matches(msg, a.keys.Quit):
-			// In reader, go back to library instead of quitting
-			if a.currentView == views.ViewReader {
+			// In reader or comic viewer, go back to library instead of quitting
+			if a.currentView == views.ViewReader || a.currentView == views.ViewComic {
 				return a.switchView(views.ViewLibrary)
 			}
 			// In library when authenticated, also allow quitting
@@ -126,6 +129,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.currentView == views.ViewUpload {
 				return a.switchView(views.ViewLibrary)
 			}
+			if a.currentView == views.ViewComic {
+				return a.switchView(views.ViewLibrary)
+			}
 		}
 
 	case views.LoginSuccessMsg:
@@ -139,7 +145,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.switchView(views.ViewLogin)
 
 	case views.OpenBookMsg:
-		// Set book in reader and switch
+		// Route CBZ files to comic viewer, everything else to text reader
+		// (EPUB comics still use text reader as they have chapter-based content)
+		if msg.Book.IsCBZ() {
+			a.comicView.(*views.ComicView).SetBook(msg.Book)
+			return a.switchView(views.ViewComic)
+		}
 		a.readerView.(*views.ReaderView).SetBook(msg.Book)
 		return a.switchView(views.ViewReader)
 
@@ -168,6 +179,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.collectionsView, cmd = a.collectionsView.Update(msg)
 	case views.ViewUpload:
 		a.uploadView, cmd = a.uploadView.Update(msg)
+	case views.ViewComic:
+		a.comicView, cmd = a.comicView.Update(msg)
 	}
 	cmds = append(cmds, cmd)
 
@@ -189,6 +202,8 @@ func (a *App) View() string {
 		content = a.collectionsView.View()
 	case views.ViewUpload:
 		content = a.uploadView.View()
+	case views.ViewComic:
+		content = a.comicView.View()
 	default:
 		content = "Unknown view"
 	}
@@ -234,6 +249,8 @@ func (a *App) getCurrentView() views.View {
 		return a.collectionsView
 	case views.ViewUpload:
 		return a.uploadView
+	case views.ViewComic:
+		return a.comicView
 	default:
 		return a.loginView
 	}
@@ -254,10 +271,15 @@ func (a *App) renderHelp() string {
 			"  n/l     Next chapter\n" +
 			"  p/h     Previous chapter\n" +
 			"  t       Table of contents\n\n" +
+			styles.HelpKey.Render("Comic Viewer") + "\n" +
+			"  l/n     Next page\n" +
+			"  h/p     Previous page\n" +
+			"  g/G     First/Last page\n\n" +
 			styles.HelpKey.Render("Library") + "\n" +
 			"  /       Search\n" +
 			"  s       Sort\n" +
-			"  v       Toggle view\n" +
+			"  v       Filter (All/Books/Comics)\n" +
+			"  b/m     Books only / Comics only\n" +
 			"  Enter   Open book\n\n" +
 			styles.HelpKey.Render("General") + "\n" +
 			"  q       Quit/Back\n" +

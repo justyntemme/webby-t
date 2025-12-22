@@ -140,6 +140,19 @@ var (
 	BookSeries = lipgloss.NewStyle().
 		Foreground(Muted).
 		Italic(true)
+
+	// Content type badges
+	BadgeBook = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#1F2937")).
+		Background(lipgloss.Color("#10B981")). // Green
+		Padding(0, 1).
+		Bold(true)
+
+	BadgeComic = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#1F2937")).
+		Background(lipgloss.Color("#F59E0B")). // Amber
+		Padding(0, 1).
+		Bold(true)
 )
 
 // Dimensions returns styled content with proper dimensions

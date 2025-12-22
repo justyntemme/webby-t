@@ -147,7 +147,8 @@ func (c *Client) GetCurrentUser() (*models.User, error) {
 // Book methods
 
 // ListBooks returns a list of books with optional filtering
-func (c *Client) ListBooks(page, limit int, sort, order, search string) (*models.BooksResponse, error) {
+// contentType can be "book", "comic", or "" for all
+func (c *Client) ListBooks(page, limit int, sort, order, search, contentType string) (*models.BooksResponse, error) {
 	params := url.Values{}
 	if page > 0 {
 		params.Set("page", fmt.Sprintf("%d", page))
@@ -163,6 +164,9 @@ func (c *Client) ListBooks(page, limit int, sort, order, search string) (*models
 	}
 	if search != "" {
 		params.Set("search", search)
+	}
+	if contentType != "" {
+		params.Set("type", contentType)
 	}
 
 	path := "/api/books"
@@ -468,4 +472,85 @@ func (c *Client) Health() error {
 		return fmt.Errorf("server unhealthy: status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+// Comic methods
+
+// GetBookCover retrieves the cover image for a book
+func (c *Client) GetBookCover(bookID string) ([]byte, string, error) {
+	req, err := http.NewRequest("GET", c.baseURL+"/api/books/"+bookID+"/cover", nil)
+	if err != nil {
+		return nil, "", err
+	}
+
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, "", fmt.Errorf("failed to get cover: %s", string(body))
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", err
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	return data, contentType, nil
+}
+
+// CBZInfoResponse represents the CBZ info response from the API
+type CBZInfoResponse struct {
+	PageCount int    `json:"pageCount"`
+	Title     string `json:"title"`
+	Author    string `json:"author"`
+	Series    string `json:"series"`
+}
+
+// GetComicPages returns the page count for a comic (CBZ)
+func (c *Client) GetComicPages(bookID string) (*CBZInfoResponse, error) {
+	resp, err := c.request("GET", "/api/books/"+bookID+"/cbz/info", nil)
+	if err != nil {
+		return nil, err
+	}
+	return parseResponse[*CBZInfoResponse](resp)
+}
+
+// GetComicPage retrieves a specific page image from a comic (0-indexed)
+func (c *Client) GetComicPage(bookID string, page int) ([]byte, string, error) {
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/books/%s/cbz/page/%d", c.baseURL, bookID, page), nil)
+	if err != nil {
+		return nil, "", err
+	}
+
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, "", fmt.Errorf("failed to get page: %s", string(body))
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", err
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	return data, contentType, nil
 }
