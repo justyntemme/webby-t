@@ -41,9 +41,23 @@ type ReaderView struct {
 	bookmarkCursor  int
 	bookmarkMsg     string // Temporary status message for bookmarks
 
+	// Search
+	searchMode    bool          // Whether we're in search input mode
+	searchQuery   string        // Current search query
+	searchMatches []searchMatch // All matches in current chapter
+	currentMatch  int           // Index of current highlighted match (-1 if none)
+	searchActive  bool          // Whether search results are being displayed
+
 	// Dimensions
 	width  int
 	height int
+}
+
+// searchMatch represents a single search match location
+type searchMatch struct {
+	lineIndex   int // Line number in wrapped content
+	startOffset int // Character offset within the line
+	endOffset   int // End character offset (exclusive)
 }
 
 // NewReaderView creates a new reader view
@@ -122,6 +136,11 @@ func (v *ReaderView) Update(msg tea.Msg) (View, tea.Cmd) {
 			return v.updateBookmarks(msg)
 		}
 
+		// Search input mode
+		if v.searchMode {
+			return v.updateSearchInput(msg)
+		}
+
 		// Reader mode
 		switch msg.String() {
 		case "j", "down":
@@ -136,7 +155,14 @@ func (v *ReaderView) Update(msg tea.Msg) (View, tea.Cmd) {
 			v.lineOffset = 0
 		case "G", "end":
 			v.lineOffset = max(0, len(v.lines)-v.visibleLines())
-		case "n", "l":
+		case "n":
+			// Next search match (if search active) or next chapter
+			if v.searchActive && len(v.searchMatches) > 0 {
+				v.nextMatch()
+			} else if v.chapter < len(v.chapters)-1 {
+				return v, v.goToChapter(v.chapter + 1)
+			}
+		case "l":
 			// Next chapter
 			if v.chapter < len(v.chapters)-1 {
 				return v, v.goToChapter(v.chapter + 1)
@@ -169,6 +195,20 @@ func (v *ReaderView) Update(msg tea.Msg) (View, tea.Cmd) {
 			// Show bookmarks list
 			v.showBookmarks = true
 			v.bookmarkCursor = 0
+		case "/":
+			// Enter search mode
+			v.searchMode = true
+			v.searchQuery = ""
+		case "N":
+			// Previous search match (if search is active)
+			if v.searchActive && len(v.searchMatches) > 0 {
+				v.prevMatch()
+			}
+		case "esc":
+			// Clear search if active
+			if v.searchActive {
+				v.clearSearch()
+			}
 		}
 
 	case tocLoadedMsg:
@@ -303,12 +343,21 @@ func (v *ReaderView) View() string {
 	// Content
 	visibleLines := v.visibleLines()
 	for i := v.lineOffset; i < min(v.lineOffset+visibleLines, len(v.lines)); i++ {
-		b.WriteString(styles.ReaderContent.Render(v.lines[i]) + "\n")
+		line := v.lines[i]
+		// Apply search highlighting if search is active
+		if v.searchActive && len(v.searchMatches) > 0 {
+			line = v.highlightLine(i, line)
+		}
+		b.WriteString(styles.ReaderContent.Render(line) + "\n")
 	}
 
-	// Footer
+	// Footer or search input
 	b.WriteString("\n")
-	b.WriteString(v.renderFooter())
+	if v.searchMode {
+		b.WriteString(v.renderSearchInput())
+	} else {
+		b.WriteString(v.renderFooter())
+	}
 
 	return b.String()
 }
@@ -444,15 +493,92 @@ func (v *ReaderView) renderFooter() string {
 		return styles.SecondaryText.Render(v.bookmarkMsg)
 	}
 
+	// Show search status if search is active
+	if v.searchActive {
+		searchStatus := fmt.Sprintf("/%s", v.searchQuery)
+		matchInfo := ""
+		if len(v.searchMatches) == 0 {
+			matchInfo = styles.ErrorStyle.Render(" [No matches]")
+		} else {
+			matchInfo = styles.SecondaryText.Render(fmt.Sprintf(" [%d/%d]", v.currentMatch+1, len(v.searchMatches)))
+		}
+		help := []string{
+			styles.HelpKey.Render("n/N") + styles.Help.Render(" next/prev"),
+			styles.HelpKey.Render("esc") + styles.Help.Render(" clear"),
+		}
+		return styles.BookAuthor.Render(searchStatus) + matchInfo + "  " + strings.Join(help, "  ")
+	}
+
 	help := []string{
 		styles.HelpKey.Render("j/k") + styles.Help.Render(" scroll"),
 		styles.HelpKey.Render("n/p") + styles.Help.Render(" chapter"),
 		styles.HelpKey.Render("t") + styles.Help.Render(" toc"),
+		styles.HelpKey.Render("/") + styles.Help.Render(" search"),
 		styles.HelpKey.Render("b/B") + styles.Help.Render(" marks"),
 		styles.HelpKey.Render("+/-") + styles.Help.Render(" size:"+scaleStr),
 		styles.HelpKey.Render("q") + styles.Help.Render(" back"),
 	}
 	return strings.Join(help, "  ")
+}
+
+// renderSearchInput renders the search input bar
+func (v *ReaderView) renderSearchInput() string {
+	cursor := "_"
+	return styles.HelpKey.Render("/") + styles.BookAuthor.Render(v.searchQuery+cursor) + "  " + styles.Help.Render("enter search • esc cancel")
+}
+
+// highlightLine applies search highlighting to a line
+func (v *ReaderView) highlightLine(lineIdx int, line string) string {
+	// Find all matches on this line
+	var lineMatches []searchMatch
+	for i, m := range v.searchMatches {
+		if m.lineIndex == lineIdx {
+			m.lineIndex = i // Store the match index for current match detection
+			lineMatches = append(lineMatches, v.searchMatches[i])
+		}
+	}
+
+	if len(lineMatches) == 0 {
+		return line
+	}
+
+	// Build highlighted line
+	var result strings.Builder
+	lastEnd := 0
+
+	for _, m := range lineMatches {
+		// Add text before match
+		if m.startOffset > lastEnd {
+			result.WriteString(line[lastEnd:m.startOffset])
+		}
+
+		// Determine if this is the current match
+		isCurrentMatch := false
+		for i, sm := range v.searchMatches {
+			if sm.lineIndex == lineIdx && sm.startOffset == m.startOffset && i == v.currentMatch {
+				isCurrentMatch = true
+				break
+			}
+		}
+
+		// Add highlighted match
+		matchText := line[m.startOffset:m.endOffset]
+		if isCurrentMatch {
+			// Current match - more prominent highlight
+			result.WriteString(lipgloss.NewStyle().Background(lipgloss.Color("3")).Foreground(lipgloss.Color("0")).Bold(true).Render(matchText))
+		} else {
+			// Other matches - subtle highlight
+			result.WriteString(lipgloss.NewStyle().Background(lipgloss.Color("8")).Foreground(lipgloss.Color("15")).Render(matchText))
+		}
+		lastEnd = m.endOffset
+	}
+
+	// Add remaining text
+	if lastEnd < len(line) {
+		result.WriteString(line[lastEnd:])
+	}
+
+	return result.String()
 }
 
 // renderTOC renders the table of contents overlay
@@ -779,4 +905,121 @@ func (v *ReaderView) renderBookmarks() string {
 		lipgloss.Center,
 		dialog,
 	)
+}
+
+// updateSearchInput handles keyboard input during search mode
+func (v *ReaderView) updateSearchInput(msg tea.KeyMsg) (View, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		// Cancel search input
+		v.searchMode = false
+		v.searchQuery = ""
+	case "enter":
+		// Execute search
+		v.searchMode = false
+		if v.searchQuery != "" {
+			v.executeSearch()
+		}
+	case "backspace":
+		// Delete last character
+		if len(v.searchQuery) > 0 {
+			v.searchQuery = v.searchQuery[:len(v.searchQuery)-1]
+		}
+	case "ctrl+u":
+		// Clear search query
+		v.searchQuery = ""
+	default:
+		// Add character to search query (filter control characters)
+		if len(msg.String()) == 1 && msg.String()[0] >= 32 {
+			v.searchQuery += msg.String()
+		} else if msg.Type == tea.KeyRunes {
+			v.searchQuery += string(msg.Runes)
+		}
+	}
+	return v, nil
+}
+
+// executeSearch finds all matches in current chapter content
+func (v *ReaderView) executeSearch() {
+	v.searchMatches = nil
+	v.currentMatch = -1
+	v.searchActive = false
+
+	if v.searchQuery == "" || len(v.lines) == 0 {
+		return
+	}
+
+	query := strings.ToLower(v.searchQuery)
+
+	// Search through all wrapped lines
+	for lineIdx, line := range v.lines {
+		lineLower := strings.ToLower(line)
+		offset := 0
+		for {
+			idx := strings.Index(lineLower[offset:], query)
+			if idx == -1 {
+				break
+			}
+			match := searchMatch{
+				lineIndex:   lineIdx,
+				startOffset: offset + idx,
+				endOffset:   offset + idx + len(v.searchQuery),
+			}
+			v.searchMatches = append(v.searchMatches, match)
+			offset += idx + 1
+		}
+	}
+
+	if len(v.searchMatches) > 0 {
+		v.searchActive = true
+		v.currentMatch = 0
+		v.scrollToMatch(0)
+	}
+}
+
+// nextMatch moves to the next search match
+func (v *ReaderView) nextMatch() {
+	if len(v.searchMatches) == 0 {
+		return
+	}
+	v.currentMatch = (v.currentMatch + 1) % len(v.searchMatches)
+	v.scrollToMatch(v.currentMatch)
+}
+
+// prevMatch moves to the previous search match
+func (v *ReaderView) prevMatch() {
+	if len(v.searchMatches) == 0 {
+		return
+	}
+	v.currentMatch--
+	if v.currentMatch < 0 {
+		v.currentMatch = len(v.searchMatches) - 1
+	}
+	v.scrollToMatch(v.currentMatch)
+}
+
+// scrollToMatch scrolls to make the given match visible
+func (v *ReaderView) scrollToMatch(matchIdx int) {
+	if matchIdx < 0 || matchIdx >= len(v.searchMatches) {
+		return
+	}
+	match := v.searchMatches[matchIdx]
+	visibleLines := v.visibleLines()
+
+	// If match is above visible area, scroll up
+	if match.lineIndex < v.lineOffset {
+		v.lineOffset = match.lineIndex
+	}
+	// If match is below visible area, scroll down
+	if match.lineIndex >= v.lineOffset+visibleLines {
+		v.lineOffset = match.lineIndex - visibleLines + 1
+	}
+}
+
+// clearSearch clears search state
+func (v *ReaderView) clearSearch() {
+	v.searchActive = false
+	v.searchQuery = ""
+	v.searchMatches = nil
+	v.currentMatch = -1
 }
