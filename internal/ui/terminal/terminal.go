@@ -1,4 +1,4 @@
-package utils
+package terminal
 
 import (
 	"bytes"
@@ -97,4 +97,37 @@ func RenderImageToString(img image.Image, mode TermImageMode) (string, error) {
 // SupportsImages returns true if the terminal supports any image protocol
 func SupportsImages() bool {
 	return DetectTerminalMode() != TermModeNone
+}
+
+// ClearImages returns the escape sequence to clear all terminal images
+// This should be printed before switching away from views that display images
+func ClearImages(mode TermImageMode) string {
+	switch mode {
+	case TermModeKitty:
+		// Kitty graphics protocol: delete all images
+		// a=d (action=delete), d=A (delete all images)
+		return "\x1b_Ga=d,d=A\x1b\\"
+	case TermModeIterm:
+		// iTerm2: Clear screen and scrollback helps, but inline images
+		// are tied to text positions. Moving cursor and clearing works.
+		// Use OSC 1337 with clear command if available, otherwise rely on screen clear
+		return "\x1b[2J\x1b[H"
+	case TermModeSixel:
+		// Sixel images are part of the text buffer
+		// Standard screen clear removes them
+		return "\x1b[2J\x1b[H"
+	default:
+		return ""
+	}
+}
+
+// ClearImagesCmd returns a tea.Cmd that clears terminal images
+// Use this in bubbletea Update functions before view transitions
+func ClearImagesCmd(mode TermImageMode) func() {
+	return func() {
+		clearSeq := ClearImages(mode)
+		if clearSeq != "" {
+			os.Stdout.WriteString(clearSeq)
+		}
+	}
 }

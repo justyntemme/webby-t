@@ -7,6 +7,7 @@ import (
 	"github.com/justyntemme/webby-t/internal/api"
 	"github.com/justyntemme/webby-t/internal/config"
 	"github.com/justyntemme/webby-t/internal/ui/styles"
+	"github.com/justyntemme/webby-t/internal/ui/terminal"
 	"github.com/justyntemme/webby-t/internal/ui/views"
 	"github.com/justyntemme/webby-t/pkg/models"
 )
@@ -247,6 +248,18 @@ func (a *App) switchView(view views.ViewType) (*App, tea.Cmd) {
 	// Save position when leaving the reader
 	if a.currentView == views.ViewReader || a.currentView == views.ViewTOC {
 		a.readerView.(*views.ReaderView).SavePositionOnExit()
+	}
+
+	// Clear terminal images when leaving views that display them
+	// This prevents image artifacts from persisting across view transitions
+	if a.currentView == views.ViewComic {
+		termMode := a.comicView.(*views.ComicView).GetTermMode()
+		terminal.ClearImagesCmd(termMode)()
+	} else if a.currentView == views.ViewLibrary {
+		termMode := a.libraryView.(*views.LibraryView).GetTermMode()
+		if termMode != terminal.TermModeNone {
+			terminal.ClearImagesCmd(termMode)()
+		}
 	}
 
 	a.prevView = a.currentView

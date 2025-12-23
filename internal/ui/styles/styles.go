@@ -161,3 +161,25 @@ func Dimensions(width, height int) lipgloss.Style {
 		Width(width).
 		Height(height)
 }
+
+// TruncateText truncates a string to maxWidth visible characters with ellipsis
+// Uses lipgloss.Width for accurate measurement of styled text
+func TruncateText(text string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+	if lipgloss.Width(text) <= maxWidth {
+		return text
+	}
+	runes := []rune(text)
+	if maxWidth <= 3 {
+		return string(runes[:maxWidth])
+	}
+	for i := len(runes) - 1; i >= 0; i-- {
+		candidate := string(runes[:i]) + "..."
+		if lipgloss.Width(candidate) <= maxWidth {
+			return candidate
+		}
+	}
+	return "..."
+}

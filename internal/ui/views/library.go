@@ -14,7 +14,7 @@ import (
 	"github.com/justyntemme/webby-t/internal/api"
 	"github.com/justyntemme/webby-t/internal/config"
 	"github.com/justyntemme/webby-t/internal/ui/styles"
-	"github.com/justyntemme/webby-t/internal/ui/utils"
+	"github.com/justyntemme/webby-t/internal/ui/terminal"
 	"github.com/justyntemme/webby-t/pkg/models"
 	"github.com/nfnt/resize"
 )
@@ -24,6 +24,53 @@ const (
 	thumbHeight = 5  // Lines high for thumbnail
 	thumbWidth  = 10 // Characters wide for thumbnail
 )
+
+// Column layout constants for uniform text display
+const (
+	colIndicator = 3  // "▸ " or "  " + queue/fav indicator
+	colBadge     = 4  // "[C] " or "[B] " content type badge
+	colAuthor    = 20 // Fixed author column width
+	colSeries    = 18 // Fixed series column width
+	minTitleCol  = 20 // Minimum title column width
+)
+
+// truncateText truncates a string to maxWidth visible characters with ellipsis
+// Uses lipgloss.Width for accurate measurement of styled text
+func truncateText(text string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+	// Use lipgloss.Width for visible width (handles ANSI codes)
+	if lipgloss.Width(text) <= maxWidth {
+		return text
+	}
+	// For truncation, work with runes of plain text
+	runes := []rune(text)
+	if maxWidth <= 3 {
+		return string(runes[:maxWidth])
+	}
+	// Truncate and add ellipsis
+	for i := len(runes) - 1; i >= 0; i-- {
+		candidate := string(runes[:i]) + "..."
+		if lipgloss.Width(candidate) <= maxWidth {
+			return candidate
+		}
+	}
+	return "..."
+}
+
+// padRight pads a string to exactly width visible characters
+// Uses lipgloss.Width to handle ANSI styled text properly
+func padRight(text string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	textWidth := lipgloss.Width(text)
+	if textWidth >= width {
+		return truncateText(text, width)
+	}
+	return text + strings.Repeat(" ", width-textWidth)
+}
 
 // Sort options
 type sortField int
@@ -101,7 +148,7 @@ type LibraryView struct {
 	total     int
 
 	// Thumbnail support
-	termMode   utils.TermImageMode
+	termMode   terminal.TermImageMode
 	coverCache map[string]string // Rendered image strings by book ID
 	showCovers bool              // Toggle for showing covers (default true if supported)
 
@@ -117,7 +164,7 @@ func NewLibraryView(client *api.Client, cfg *config.Config) *LibraryView {
 	searchInput.CharLimit = 100
 	searchInput.Width = 40
 
-	termMode := utils.DetectTerminalMode()
+	termMode := terminal.DetectTerminalMode()
 	return &LibraryView{
 		client:      client,
 		config:      cfg,
@@ -128,7 +175,7 @@ func NewLibraryView(client *api.Client, cfg *config.Config) *LibraryView {
 		searchInput: searchInput,
 		termMode:    termMode,
 		coverCache:  make(map[string]string),
-		showCovers:  termMode != utils.TermModeNone, // Enable by default if supported
+		showCovers:  termMode != terminal.TermModeNone, // Enable by default if supported
 		width:       80,
 		height:      24,
 	}
@@ -156,7 +203,7 @@ type coverLoadedMsg struct {
 
 // loadCoverCmd creates a command to fetch, render, and cache a book cover
 func (v *LibraryView) loadCoverCmd(bookID string) tea.Cmd {
-	if v.termMode == utils.TermModeNone {
+	if v.termMode == terminal.TermModeNone {
 		return nil // No image support
 	}
 	if _, exists := v.coverCache[bookID]; exists {
@@ -177,7 +224,7 @@ func (v *LibraryView) loadCoverCmd(bookID string) tea.Cmd {
 		// Resize to thumbnail size (height in pixels, roughly 8 pixels per line)
 		resizedImg := resize.Resize(0, uint(thumbHeight*8), img, resize.Lanczos3)
 
-		renderedImage, err := utils.RenderImageToString(resizedImg, v.termMode)
+		renderedImage, err := terminal.RenderImageToString(resizedImg, v.termMode)
 		if err != nil {
 			return coverLoadedMsg{bookID: bookID, err: err}
 		}
@@ -435,7 +482,7 @@ func (v *LibraryView) Update(msg tea.Msg) (View, tea.Cmd) {
 			return v, NotifyThemeChanged(newTheme)
 		case "C":
 			// Toggle cover thumbnails (only if terminal supports images)
-			if v.termMode != utils.TermModeNone {
+			if v.termMode != terminal.TermModeNone {
 				v.showCovers = !v.showCovers
 				// Load covers if enabling and we have books
 				if v.showCovers && len(v.books) > 0 {
@@ -466,7 +513,7 @@ func (v *LibraryView) Update(msg tea.Msg) (View, tea.Cmd) {
 
 		// Load covers for visible books if image support available
 		var cmds []tea.Cmd
-		if v.termMode != utils.TermModeNone {
+		if v.termMode != terminal.TermModeNone {
 			visibleCount := v.visibleLines()
 			for i := 0; i < min(visibleCount, len(v.books)); i++ {
 				if cmd := v.loadCoverCmd(v.books[i].ID); cmd != nil {
@@ -575,7 +622,12 @@ func (v *LibraryView) SetSize(width, height int) {
 	v.searchInput.Width = min(40, width-10)
 }
 
-// renderHeader renders the header bar
+// GetTermMode returns the terminal image mode for cleanup purposes
+func (v *LibraryView) GetTermMode() terminal.TermImageMode {
+	return v.termMode
+}
+
+// renderHeader renders the header bar with proper truncation
 func (v *LibraryView) renderHeader() string {
 	// Title based on mode and content type filter
 	titleText := " Library "
@@ -586,9 +638,13 @@ func (v *LibraryView) renderHeader() string {
 	} else if v.recentlyReadMode {
 		titleText = " Recently Read "
 	} else if v.filterAuthor != "" {
-		titleText = " Author: " + v.filterAuthor + " "
+		// Truncate long author names in header
+		authorName := truncateText(v.filterAuthor, 20)
+		titleText = " Author: " + authorName + " "
 	} else if v.filterSeries != "" {
-		titleText = " Series: " + v.filterSeries + " "
+		// Truncate long series names in header
+		seriesName := truncateText(v.filterSeries, 20)
+		titleText = " Series: " + seriesName + " "
 	} else {
 		switch v.contentType {
 		case models.ContentTypeBook:
@@ -606,18 +662,29 @@ func (v *LibraryView) renderHeader() string {
 	}
 	sortInfo := styles.Help.Render(fmt.Sprintf(" Sort: %s %s ", v.sortBy.Label(), sortDir))
 
-	// Search indicator
-	searchInfo := ""
-	if v.searchInput.Value() != "" {
-		searchInfo = styles.SecondaryText.Render(fmt.Sprintf(" [Search: %s]", v.searchInput.Value()))
-	}
-
-	// Page info
+	// Page info (fixed width, always show)
 	totalPages := (v.total + v.pageSize - 1) / v.pageSize
 	if totalPages < 1 {
 		totalPages = 1
 	}
 	pageInfo := styles.Help.Render(fmt.Sprintf(" Page %d/%d ", v.page, totalPages))
+
+	// Calculate available space for search info
+	fixedWidth := lipgloss.Width(title) + lipgloss.Width(sortInfo) + lipgloss.Width(pageInfo) + 2
+	availableForSearch := v.width - fixedWidth
+
+	// Search indicator (truncated to fit)
+	searchInfo := ""
+	if v.searchInput.Value() != "" {
+		searchQuery := v.searchInput.Value()
+		if availableForSearch > 12 {
+			maxQueryLen := availableForSearch - 12 // Account for " [Search: ]"
+			if maxQueryLen > 0 {
+				searchQuery = truncateText(searchQuery, maxQueryLen)
+			}
+			searchInfo = styles.SecondaryText.Render(fmt.Sprintf(" [Search: %s]", searchQuery))
+		}
+	}
 
 	// Combine
 	left := title + sortInfo + searchInfo
@@ -634,15 +701,17 @@ func (v *LibraryView) renderHeader() string {
 // renderBookLine renders a single book line
 func (v *LibraryView) renderBookLine(book models.Book, selected bool) string {
 	// Check if we have image support and covers are enabled
-	if v.showCovers && v.termMode != utils.TermModeNone {
+	if v.showCovers && v.termMode != terminal.TermModeNone {
 		return v.renderBookLineWithThumbnail(book, selected)
 	}
 	return v.renderBookLineTextOnly(book, selected)
 }
 
-// renderBookLineTextOnly renders a compact text-only book line
+// renderBookLineTextOnly renders a compact text-only book line with fixed-width columns
 func (v *LibraryView) renderBookLineTextOnly(book models.Book, selected bool) string {
-	// Queue position or favorite star indicator
+	// --- Build fixed-width columns ---
+
+	// Indicator column (3 chars): queue position or favorite star
 	indicator := "   "
 	if v.config != nil {
 		if queuePos := v.config.GetQueuePosition(book.ID); queuePos > 0 {
@@ -652,47 +721,49 @@ func (v *LibraryView) renderBookLineTextOnly(book models.Book, selected bool) st
 		}
 	}
 
-	// Content type badge (only show when viewing "all")
-	badge := ""
+	// Badge column (4 chars): content type badge
+	badgeText := "    "
 	if v.contentType == "" && book.ContentType != "" {
 		if book.IsComic() {
-			badge = styles.BadgeComic.Render("C") + " "
+			badgeText = styles.BadgeComic.Render("[C]") + " "
 		} else {
-			badge = styles.BadgeBook.Render("B") + " "
+			badgeText = styles.BadgeBook.Render("[B]") + " "
 		}
 	}
+	badge := padRight(badgeText, colBadge)
 
-	// Format: [badge] Title - Author (Series #N)
-	title := book.Title
-	author := book.Author
-	series := ""
+	// Author column (fixed width)
+	author := padRight(book.Author, colAuthor)
+
+	// Series column (fixed width)
+	seriesText := ""
 	if book.Series != "" {
-		series = fmt.Sprintf(" (%s", book.Series)
+		seriesText = book.Series
 		if book.SeriesIndex > 0 {
-			series += fmt.Sprintf(" #%.0f", book.SeriesIndex)
+			seriesText += fmt.Sprintf(" #%.0f", book.SeriesIndex)
 		}
-		series += ")"
 	}
+	series := padRight(seriesText, colSeries)
 
-	// Truncate if needed (account for badge and indicator width)
-	badgeWidth := 0
-	if badge != "" {
-		badgeWidth = 4 // "[X] " width
+	// Title column (dynamic - fills remaining space)
+	const selectorWidth = 2
+	titleWidth := v.width - selectorWidth - colIndicator - colBadge - colAuthor - colSeries - 1
+	if titleWidth < minTitleCol {
+		titleWidth = minTitleCol
 	}
-	indicatorWidth := 3 // "★ " or "  " or "99 "
-	maxWidth := v.width - 4 - badgeWidth - indicatorWidth
-	line := fmt.Sprintf("%s - %s%s", title, author, series)
-	if len(line) > maxWidth && maxWidth > 3 {
-		line = line[:maxWidth-3] + "..."
-	}
+	title := padRight(book.Title, titleWidth)
 
+	// --- Assemble line with fixed columns ---
+	line := indicator + badge + title + " " + author + " " + series
+
+	// --- Apply selection styling ---
 	if selected {
-		return styles.ListItemSelected.Width(v.width).Render("▸ " + indicator + badge + line)
+		return styles.ListItemSelected.Width(v.width).Render("▸ " + line)
 	}
-	return styles.ListItem.Render("  " + indicator + badge + line)
+	return styles.ListItem.Width(v.width).Render("  " + line)
 }
 
-// renderBookLineWithThumbnail renders a book line with cover thumbnail
+// renderBookLineWithThumbnail renders a book line with cover thumbnail and aligned details
 func (v *LibraryView) renderBookLineWithThumbnail(book models.Book, selected bool) string {
 	// Left column: Thumbnail or placeholder
 	var leftCol string
@@ -703,7 +774,7 @@ func (v *LibraryView) renderBookLineWithThumbnail(book models.Book, selected boo
 			Render(renderedImg)
 	} else {
 		// Placeholder while loading
-		placeholder := styles.MutedText.Render("[   ]")
+		placeholder := styles.MutedText.Render("[...]")
 		leftCol = lipgloss.NewStyle().
 			Width(thumbWidth).
 			Height(thumbHeight).
@@ -711,58 +782,62 @@ func (v *LibraryView) renderBookLineWithThumbnail(book models.Book, selected boo
 			Render(placeholder)
 	}
 
-	// Right column: Book details
-	rightColWidth := v.width - thumbWidth - 6
+	// Right column: Book details with proper truncation
+	const selectorWidth = 2
+	rightColWidth := v.width - thumbWidth - selectorWidth - 2
 
-	// Build book info
+	// Build book info with truncation to prevent overflow
 	titleStyle := styles.BookTitle
 	if selected {
 		titleStyle = titleStyle.Bold(true)
 	}
-	title := titleStyle.Render(book.Title)
-	author := styles.BookAuthor.Render("by " + book.Author)
+	title := titleStyle.Render(truncateText(book.Title, rightColWidth-2))
 
-	// Series info
+	authorText := ""
+	if book.Author != "" {
+		authorText = "by " + book.Author
+	}
+	author := styles.BookAuthor.Render(truncateText(authorText, rightColWidth-2))
+
+	// Series info (truncated)
 	series := ""
 	if book.Series != "" {
 		seriesText := book.Series
 		if book.SeriesIndex > 0 {
 			seriesText += fmt.Sprintf(" #%.0f", book.SeriesIndex)
 		}
-		series = styles.MutedText.Render(seriesText)
+		series = styles.MutedText.Render(truncateText(seriesText, rightColWidth-2))
 	}
 
-	// Favorite/queue indicator
-	indicator := ""
+	// Build indicators line (queue pos, favorite, badge on same line)
+	var indicators []string
 	if v.config != nil {
 		if queuePos := v.config.GetQueuePosition(book.ID); queuePos > 0 {
-			indicator = styles.SecondaryText.Render(fmt.Sprintf("#%d in queue", queuePos))
+			indicators = append(indicators, styles.SecondaryText.Render(fmt.Sprintf("#%d", queuePos)))
 		} else if v.config.IsFavorite(book.ID) {
-			indicator = styles.SecondaryText.Render("★ Favorite")
+			indicators = append(indicators, styles.SecondaryText.Render("★"))
 		}
 	}
-
-	// Content type badge
-	badge := ""
 	if v.contentType == "" && book.ContentType != "" {
 		if book.IsComic() {
-			badge = styles.BadgeComic.Render("Comic")
+			indicators = append(indicators, styles.BadgeComic.Render("[C]"))
 		} else {
-			badge = styles.BadgeBook.Render("Book")
+			indicators = append(indicators, styles.BadgeBook.Render("[B]"))
 		}
 	}
 
-	// Combine details vertically
-	details := lipgloss.JoinVertical(lipgloss.Left, title, author)
+	// Combine details vertically (max 4 lines to fit thumbHeight=5)
+	var lines []string
+	lines = append(lines, title)
+	lines = append(lines, author)
 	if series != "" {
-		details = lipgloss.JoinVertical(lipgloss.Left, details, series)
+		lines = append(lines, series)
 	}
-	if indicator != "" {
-		details = lipgloss.JoinVertical(lipgloss.Left, details, indicator)
+	if len(indicators) > 0 {
+		lines = append(lines, strings.Join(indicators, " "))
 	}
-	if badge != "" {
-		details = lipgloss.JoinVertical(lipgloss.Left, details, badge)
-	}
+
+	details := lipgloss.JoinVertical(lipgloss.Left, lines...)
 
 	rightCol := lipgloss.NewStyle().
 		Width(rightColWidth).
@@ -779,7 +854,7 @@ func (v *LibraryView) renderBookLineWithThumbnail(book models.Book, selected boo
 		selector = "▸ "
 		return styles.ListItemSelected.Width(v.width).Render(selector + fullLine)
 	}
-	return styles.ListItem.Render(selector + fullLine)
+	return styles.ListItem.Width(v.width).Render(selector + fullLine)
 }
 
 // renderFooter renders the footer help
@@ -1001,7 +1076,7 @@ func (v *LibraryView) visibleLines() int {
 	}
 
 	// If covers are shown, each item takes multiple lines
-	if v.showCovers && v.termMode != utils.TermModeNone {
+	if v.showCovers && v.termMode != terminal.TermModeNone {
 		// Add 1 for spacing between items
 		lines := availableHeight / (thumbHeight + 1)
 		if lines < 1 {

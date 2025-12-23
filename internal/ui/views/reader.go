@@ -408,13 +408,14 @@ func (v *ReaderView) SetSize(width, height int) {
 	}
 }
 
-// renderHeader renders the reader header
+// renderHeader renders the reader header with proper truncation
 func (v *ReaderView) renderHeader() string {
-	// Book title
-	title := v.book.Title
-	if len(title) > v.width/3 {
-		title = title[:v.width/3-3] + "..."
+	// Book title (truncated to 1/3 of width, unicode-safe)
+	maxTitleWidth := v.width / 3
+	if maxTitleWidth < 10 {
+		maxTitleWidth = 10
 	}
+	title := styles.TruncateText(v.book.Title, maxTitleWidth)
 	titlePart := styles.ReaderHeader.Render(" " + title + " ")
 
 	// Get current chapter (different logic for continuous mode)
@@ -423,13 +424,10 @@ func (v *ReaderView) renderHeader() string {
 		currentChapter = v.getCurrentChapterFromLine(v.lineOffset)
 	}
 
-	// Chapter info
+	// Chapter info (truncated chapter title)
 	chapterTitle := ""
 	if len(v.chapters) > currentChapter && currentChapter >= 0 {
-		chapterTitle = v.chapters[currentChapter].Title
-		if len(chapterTitle) > 20 {
-			chapterTitle = chapterTitle[:17] + "..."
-		}
+		chapterTitle = styles.TruncateText(v.chapters[currentChapter].Title, 20)
 	}
 	chapterPart := styles.Help.Render(fmt.Sprintf(" Ch %d/%d: %s ", currentChapter+1, len(v.chapters), chapterTitle))
 

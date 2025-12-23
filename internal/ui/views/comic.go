@@ -13,7 +13,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/justyntemme/webby-t/internal/api"
 	"github.com/justyntemme/webby-t/internal/ui/styles"
-	"github.com/justyntemme/webby-t/internal/ui/utils"
+	"github.com/justyntemme/webby-t/internal/ui/terminal"
 	"github.com/justyntemme/webby-t/pkg/models"
 )
 
@@ -36,7 +36,7 @@ type ComicView struct {
 	imageLoaded bool
 
 	// Terminal capabilities
-	termMode utils.TermImageMode
+	termMode terminal.TermImageMode
 
 	// Dimensions
 	width  int
@@ -50,7 +50,7 @@ func NewComicView(client *api.Client) *ComicView {
 		currentPage: 1,
 		width:       80,
 		height:      24,
-		termMode:    utils.DetectTerminalMode(),
+		termMode:    terminal.DetectTerminalMode(),
 	}
 }
 
@@ -89,8 +89,9 @@ func (v *ComicView) Update(msg tea.Msg) (View, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "esc":
-			// Clear screen to remove any lingering images before switching views
-			return v, tea.Sequence(tea.ClearScreen, SwitchTo(ViewLibrary))
+			// Clear terminal images using protocol-specific commands before switching views
+			terminal.ClearImagesCmd(v.termMode)()
+			return v, SwitchTo(ViewLibrary)
 		case "j", "down", "l", "right", "n", " ", "pgdown":
 			// Next page
 			if v.currentPage < v.pageCount {
@@ -175,7 +176,7 @@ func (v *ComicView) View() string {
 			styles.ErrorStyle.Render("Error: "+v.err.Error()),
 		)
 		b.WriteString(content)
-	} else if v.termMode == utils.TermModeNone {
+	} else if v.termMode == terminal.TermModeNone {
 		// No image protocol support
 		content := lipgloss.Place(
 			v.width,
@@ -207,13 +208,14 @@ func (v *ComicView) View() string {
 	return b.String()
 }
 
-// renderHeader renders the header bar
+// renderHeader renders the header bar with proper truncation
 func (v *ComicView) renderHeader() string {
-	// Title
-	title := v.book.Title
-	if len(title) > 40 {
-		title = title[:37] + "..."
+	// Title (unicode-safe truncation)
+	maxTitleWidth := 40
+	if v.width > 0 && v.width/2 < maxTitleWidth {
+		maxTitleWidth = v.width / 2
 	}
+	title := styles.TruncateText(v.book.Title, maxTitleWidth)
 	titleBar := styles.TitleBar.Render(" " + title + " ")
 
 	// Page indicator
@@ -244,7 +246,7 @@ func (v *ComicView) renderImage() string {
 	}
 
 	// Use shared utility to render the image
-	imgStr, renderErr := utils.RenderImageToString(img, v.termMode)
+	imgStr, renderErr := terminal.RenderImageToString(img, v.termMode)
 	if renderErr != nil {
 		return styles.ErrorStyle.Render("Render error: " + renderErr.Error())
 	}
@@ -266,6 +268,11 @@ func (v *ComicView) renderFooter() string {
 func (v *ComicView) SetSize(width, height int) {
 	v.width = width
 	v.height = height
+}
+
+// GetTermMode returns the terminal image mode for cleanup purposes
+func (v *ComicView) GetTermMode() terminal.TermImageMode {
+	return v.termMode
 }
 
 // loadPageCount fetches the comic page count
