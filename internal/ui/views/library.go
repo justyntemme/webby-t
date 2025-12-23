@@ -19,19 +19,10 @@ import (
 	"github.com/nfnt/resize"
 )
 
-// Thumbnail dimensions
+// Thumbnail dimensions (only used when covers explicitly enabled)
 const (
 	thumbHeight = 5  // Lines high for thumbnail
 	thumbWidth  = 10 // Characters wide for thumbnail
-)
-
-// Column layout constants for uniform text display
-const (
-	colIndicator = 3  // "▸ " or "  " + queue/fav indicator
-	colBadge     = 4  // "[C] " or "[B] " content type badge
-	colAuthor    = 20 // Fixed author column width
-	colSeries    = 18 // Fixed series column width
-	minTitleCol  = 20 // Minimum title column width
 )
 
 // truncateText truncates a string to maxWidth visible characters with ellipsis
@@ -175,7 +166,7 @@ func NewLibraryView(client *api.Client, cfg *config.Config) *LibraryView {
 		searchInput: searchInput,
 		termMode:    termMode,
 		coverCache:  make(map[string]string),
-		showCovers:  termMode != terminal.TermModeNone, // Enable by default if supported
+		showCovers:  false, // Disabled by default - press C to enable
 		width:       80,
 		height:      24,
 	}
@@ -678,68 +669,51 @@ func (v *LibraryView) GetTermMode() terminal.TermImageMode {
 	return v.termMode
 }
 
-// renderHeader renders the header bar with proper truncation
+// renderHeader renders a clean header bar
 func (v *LibraryView) renderHeader() string {
-	// Title based on mode and content type filter
-	titleText := " Library "
+	// Title based on mode
+	title := "Library"
 	if v.queueMode {
-		titleText = " Reading Queue "
+		title = "Reading Queue"
 	} else if v.favoritesMode {
-		titleText = " ★ Favorites "
+		title = "Favorites"
 	} else if v.recentlyReadMode {
-		titleText = " Recently Read "
+		title = "Recently Read"
 	} else if v.filterAuthor != "" {
-		// Truncate long author names in header
-		authorName := truncateText(v.filterAuthor, 20)
-		titleText = " Author: " + authorName + " "
+		title = "Author: " + truncateText(v.filterAuthor, 20)
 	} else if v.filterSeries != "" {
-		// Truncate long series names in header
-		seriesName := truncateText(v.filterSeries, 20)
-		titleText = " Series: " + seriesName + " "
+		title = "Series: " + truncateText(v.filterSeries, 20)
 	} else {
 		switch v.contentType {
 		case models.ContentTypeBook:
-			titleText = " Books "
+			title = "Books"
 		case models.ContentTypeComic:
-			titleText = " Comics "
+			title = "Comics"
 		}
 	}
-	title := styles.TitleBar.Render(titleText)
 
-	// Sort indicator
+	// Left side: title
+	leftPart := styles.BookTitle.Render(title)
+
+	// Right side: sort + page info
 	sortDir := "↑"
 	if !v.sortAsc {
 		sortDir = "↓"
 	}
-	sortInfo := styles.Help.Render(fmt.Sprintf(" Sort: %s %s ", v.sortBy.Label(), sortDir))
-
-	// Page info (fixed width, always show)
 	totalPages := (v.total + v.pageSize - 1) / v.pageSize
 	if totalPages < 1 {
 		totalPages = 1
 	}
-	pageInfo := styles.Help.Render(fmt.Sprintf(" Page %d/%d ", v.page, totalPages))
+	rightPart := styles.MutedText.Render(fmt.Sprintf("%s %s  %d/%d", v.sortBy.Label(), sortDir, v.page, totalPages))
 
-	// Calculate available space for search info
-	fixedWidth := lipgloss.Width(title) + lipgloss.Width(sortInfo) + lipgloss.Width(pageInfo) + 2
-	availableForSearch := v.width - fixedWidth
-
-	// Search indicator (truncated to fit)
-	searchInfo := ""
+	// Search indicator in middle if active
+	searchPart := ""
 	if v.searchInput.Value() != "" {
-		searchQuery := v.searchInput.Value()
-		if availableForSearch > 12 {
-			maxQueryLen := availableForSearch - 12 // Account for " [Search: ]"
-			if maxQueryLen > 0 {
-				searchQuery = truncateText(searchQuery, maxQueryLen)
-			}
-			searchInfo = styles.SecondaryText.Render(fmt.Sprintf(" [Search: %s]", searchQuery))
-		}
+		searchPart = styles.SecondaryText.Render(" [" + truncateText(v.searchInput.Value(), 15) + "]")
 	}
 
-	// Combine
-	left := title + sortInfo + searchInfo
-	right := pageInfo
+	left := leftPart + searchPart
+	right := rightPart
 
 	gap := v.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 0 {
@@ -758,60 +732,124 @@ func (v *LibraryView) renderBookLine(book models.Book, selected bool) string {
 	return v.renderBookLineTextOnly(book, selected)
 }
 
-// renderBookLineTextOnly renders a compact text-only book line with fixed-width columns
+// renderBookLineTextOnly renders a clean, simple book line
 func (v *LibraryView) renderBookLineTextOnly(book models.Book, selected bool) string {
-	// --- Build fixed-width columns ---
+	// Calculate available width for content (minus selector "▸ " or "  ")
+	contentWidth := v.width - 3
+	if contentWidth < 20 {
+		contentWidth = 20
+	}
 
-	// Indicator column (3 chars): queue position or favorite star
-	indicator := "   "
+	// Build the line: Title - Author (Series #N)
+	var parts []string
+
+	// Title (main content)
+	title := book.Title
+
+	// Author
+	authorPart := ""
+	if book.Author != "" {
+		authorPart = book.Author
+	}
+
+	// Series with index
+	seriesPart := ""
+	if book.Series != "" {
+		seriesPart = book.Series
+		if book.SeriesIndex > 0 {
+			seriesPart += fmt.Sprintf(" #%.0f", book.SeriesIndex)
+		}
+	}
+
+	// Indicators (favorite star or queue position)
+	indicatorPart := ""
 	if v.config != nil {
 		if queuePos := v.config.GetQueuePosition(book.ID); queuePos > 0 {
-			indicator = fmt.Sprintf("%2d ", queuePos)
+			indicatorPart = fmt.Sprintf("[%d]", queuePos)
 		} else if v.config.IsFavorite(book.ID) {
-			indicator = " ★ "
+			indicatorPart = "★"
 		}
 	}
 
-	// Badge column (4 chars): content type badge
-	badgeText := "    "
+	// Type indicator (only when showing all content types)
+	typePart := ""
 	if v.contentType == "" && book.ContentType != "" {
 		if book.IsComic() {
-			badgeText = styles.BadgeComic.Render("[C]") + " "
+			typePart = "C"
 		} else {
-			badgeText = styles.BadgeBook.Render("[B]") + " "
+			typePart = "B"
 		}
 	}
-	badge := padRight(badgeText, colBadge)
 
-	// Author column (fixed width)
-	author := padRight(book.Author, colAuthor)
+	// Build right side metadata
+	parts = append(parts, title)
+	if authorPart != "" {
+		parts = append(parts, authorPart)
+	}
+	if seriesPart != "" {
+		parts = append(parts, seriesPart)
+	}
 
-	// Series column (fixed width)
-	seriesText := ""
-	if book.Series != "" {
-		seriesText = book.Series
-		if book.SeriesIndex > 0 {
-			seriesText += fmt.Sprintf(" #%.0f", book.SeriesIndex)
+	// Calculate how much space we have
+	// Format: Title | Author | Series | [indicators]
+	rightMeta := ""
+	if indicatorPart != "" || typePart != "" {
+		metaParts := []string{}
+		if typePart != "" {
+			metaParts = append(metaParts, typePart)
 		}
+		if indicatorPart != "" {
+			metaParts = append(metaParts, indicatorPart)
+		}
+		rightMeta = " " + strings.Join(metaParts, " ")
 	}
-	series := padRight(seriesText, colSeries)
 
-	// Title column (dynamic - fills remaining space)
-	const selectorWidth = 2
-	titleWidth := v.width - selectorWidth - colIndicator - colBadge - colAuthor - colSeries - 1
-	if titleWidth < minTitleCol {
-		titleWidth = minTitleCol
+	// Build the display line with proper truncation
+	separator := " │ "
+	sepLen := lipgloss.Width(separator)
+	rightMetaLen := lipgloss.Width(rightMeta)
+
+	// Calculate space for each column
+	availableForContent := contentWidth - rightMetaLen
+	if availableForContent < 30 {
+		availableForContent = 30
 	}
-	title := padRight(book.Title, titleWidth)
 
-	// --- Assemble line with fixed columns ---
-	line := indicator + badge + title + " " + author + " " + series
+	// Allocate space: 50% title, 25% author, 25% series
+	titleCol := availableForContent * 50 / 100
+	authorCol := availableForContent * 25 / 100
+	seriesCol := availableForContent - titleCol - authorCol - (2 * sepLen)
 
-	// --- Apply selection styling ---
+	if titleCol < 15 {
+		titleCol = 15
+	}
+	if authorCol < 10 {
+		authorCol = 10
+	}
+	if seriesCol < 10 {
+		seriesCol = 10
+	}
+
+	// Truncate and pad each column
+	titleStr := truncateText(title, titleCol)
+	titleStr = padRight(titleStr, titleCol)
+
+	authorStr := truncateText(authorPart, authorCol)
+	authorStr = padRight(authorStr, authorCol)
+
+	seriesStr := truncateText(seriesPart, seriesCol)
+	seriesStr = padRight(seriesStr, seriesCol)
+
+	// Build final line
+	line := titleStr + separator + authorStr + separator + seriesStr + rightMeta
+
+	// Apply styling based on selection
 	if selected {
-		return styles.ListItemSelected.Width(v.width).Render("▸ " + line)
+		// Selected: cyan foreground with arrow indicator
+		return styles.SecondaryText.Render("▸ ") + styles.SecondaryText.Bold(true).Render(line)
 	}
-	return styles.ListItem.Width(v.width).Render("  " + line)
+	// Not selected: dim text
+	return "  " + styles.MutedText.Render(line)
 }
 
 // renderBookLineWithThumbnail renders a book line with cover thumbnail and aligned details
