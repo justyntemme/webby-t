@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/color/palette"
 	"image/draw"
@@ -23,6 +24,9 @@ const (
 	// TermModeSixel indicates Sixel graphics protocol support
 	TermModeSixel
 )
+
+// ComicImageID is a stable ID for the main comic image (for Kitty protocol)
+const ComicImageID uint32 = 1989
 
 // String returns a human-readable name for the terminal mode
 func (m TermImageMode) String() string {
@@ -67,23 +71,25 @@ func ImageToPaletted(img image.Image) *image.Paletted {
 	return paletted
 }
 
-// RenderImageToString renders an image to a string based on the terminal mode
-func RenderImageToString(img image.Image, mode TermImageMode) (string, error) {
+// RenderImageToString renders an image to a string based on the terminal mode.
+// For Kitty protocol, an optional image ID can be passed for targeted clearing.
+func RenderImageToString(img image.Image, mode TermImageMode, kittyID ...uint32) (string, error) {
 	var buf bytes.Buffer
 	var renderErr error
 
 	switch mode {
 	case TermModeKitty:
-		renderErr = rasterm.KittyWriteImage(&buf, img, rasterm.KittyImgOpts{})
+		opts := rasterm.KittyImgOpts{}
+		if len(kittyID) > 0 {
+			opts.ImageId = kittyID[0]
+		}
+		renderErr = rasterm.KittyWriteImage(&buf, img, opts)
 	case TermModeIterm:
 		renderErr = rasterm.ItermWriteImage(&buf, img)
 	case TermModeSixel:
+		// Write to buffer instead of stdout for proper bubbletea integration
 		paletted := ImageToPaletted(img)
-		renderErr = rasterm.SixelWriteImage(os.Stdout, paletted)
-		if renderErr != nil {
-			return "", renderErr
-		}
-		return "", nil // Sixel writes to stdout, return empty
+		renderErr = rasterm.SixelWriteImage(&buf, paletted)
 	default:
 		return "", nil // No-op for unsupported terminals
 	}
@@ -97,6 +103,25 @@ func RenderImageToString(img image.Image, mode TermImageMode) (string, error) {
 // SupportsImages returns true if the terminal supports any image protocol
 func SupportsImages() bool {
 	return DetectTerminalMode() != TermModeNone
+}
+
+// ClearComicImage returns the escape sequence to clear the comic image area.
+// This is designed to be less disruptive than a full screen clear.
+func ClearComicImage(mode TermImageMode) string {
+	switch mode {
+	case TermModeKitty:
+		// Kitty graphics protocol: delete image by its specific ID
+		// This is targeted and doesn't affect other UI elements
+		return fmt.Sprintf("\x1b_Ga=d,i=%d\x1b\\", ComicImageID)
+	case TermModeIterm, TermModeSixel:
+		// For iTerm2 and Sixel, images are part of the character grid
+		// Clear from line 2 (after header) to end of screen
+		// \x1b[2;1H: Move cursor to line 2, column 1
+		// \x1b[J: Clear from cursor to end of screen
+		return "\x1b[2;1H\x1b[J"
+	default:
+		return ""
+	}
 }
 
 // ClearImages returns the escape sequence to clear all terminal images

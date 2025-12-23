@@ -421,13 +421,16 @@ func (v *ComicView) renderImage() string {
 	// Get the image to render (possibly cropped for zoom)
 	imgToRender := v.getViewportImage()
 
-	// Use shared utility to render the image
-	imgStr, renderErr := terminal.RenderImageToString(imgToRender, v.termMode)
+	// Clear previous image before rendering new one (prevents zoom artifacts)
+	clearSeq := terminal.ClearComicImage(v.termMode)
+
+	// Use shared utility to render the image with stable ID for targeted clearing
+	imgStr, renderErr := terminal.RenderImageToString(imgToRender, v.termMode, terminal.ComicImageID)
 	if renderErr != nil {
 		return styles.ErrorStyle.Render("Render error: " + renderErr.Error())
 	}
 
-	return imgStr
+	return clearSeq + imgStr
 }
 
 // getViewportImage returns the portion of the image visible at current zoom/pan
