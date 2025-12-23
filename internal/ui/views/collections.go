@@ -151,12 +151,11 @@ func (v *CollectionsView) View() string {
 	var b strings.Builder
 
 	// Header
-	b.WriteString(styles.TitleBar.Render(" Collections ") + "\n\n")
+	b.WriteString(styles.BookTitle.Render("Collections") + "\n\n")
 
 	// Create mode input
 	if v.createMode {
-		b.WriteString(styles.InputLabel.Render("New Collection:") + "\n")
-		b.WriteString(styles.InputFieldFocused.Render(v.createInput.View()) + "\n\n")
+		b.WriteString(styles.SecondaryText.Render("New Collection: ") + v.createInput.View() + "\n\n")
 	}
 
 	// Loading state
@@ -181,13 +180,14 @@ func (v *CollectionsView) View() string {
 	if len(v.collections) == 0 {
 		b.WriteString(styles.MutedText.Render("No collections yet. Press 'c' to create one.") + "\n")
 	} else {
-		// Collection list
+		// Collection list - simple single-line entries
 		for i, col := range v.collections {
-			line := col.Name
 			if i == v.cursor {
-				b.WriteString(styles.ListItemSelected.Render("▸ "+line) + "\n")
+				// Selected: cyan arrow + bold text
+				b.WriteString(styles.SecondaryText.Render("▸ ") + styles.SecondaryText.Bold(true).Render(col.Name) + "\n")
 			} else {
-				b.WriteString(styles.ListItem.Render("  "+line) + "\n")
+				// Not selected: muted text
+				b.WriteString("  " + styles.MutedText.Render(col.Name) + "\n")
 			}
 		}
 	}
@@ -195,11 +195,12 @@ func (v *CollectionsView) View() string {
 	// Footer
 	b.WriteString("\n")
 	help := []string{
+		styles.HelpKey.Render("j/k") + styles.Help.Render(" nav"),
 		styles.HelpKey.Render("c") + styles.Help.Render(" create"),
 		styles.HelpKey.Render("d") + styles.Help.Render(" delete"),
 		styles.HelpKey.Render("esc") + styles.Help.Render(" back"),
 	}
-	b.WriteString(strings.Join(help, "  "))
+	b.WriteString(styles.FooterBar.Width(v.width).Render(strings.Join(help, "  ")))
 
 	return b.String()
 }

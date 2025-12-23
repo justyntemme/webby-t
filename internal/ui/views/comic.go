@@ -17,6 +17,9 @@ import (
 	"github.com/justyntemme/webby-t/pkg/models"
 )
 
+// Zoom levels available
+var zoomLevels = []float64{1.0, 1.5, 2.0, 3.0, 4.0}
+
 // ComicView displays comic pages with image rendering
 type ComicView struct {
 	client *api.Client
@@ -34,6 +37,12 @@ type ComicView struct {
 	imageData   []byte
 	imageType   string
 	imageLoaded bool
+	decodedImg  image.Image // Cached decoded image for zoom/pan
+
+	// Zoom and pan state
+	zoomIndex int     // Index into zoomLevels
+	panX      float64 // Pan position as fraction (0.0 = left, 1.0 = right)
+	panY      float64 // Pan position as fraction (0.0 = top, 1.0 = bottom)
 
 	// Terminal capabilities
 	termMode terminal.TermImageMode
@@ -60,7 +69,29 @@ func (v *ComicView) SetBook(book models.Book) {
 	v.currentPage = 1
 	v.imageData = nil
 	v.imageLoaded = false
+	v.decodedImg = nil
 	v.err = nil
+	v.resetZoomPan()
+}
+
+// resetZoomPan resets zoom and pan to default
+func (v *ComicView) resetZoomPan() {
+	v.zoomIndex = 0
+	v.panX = 0.5 // Center
+	v.panY = 0.5 // Center
+}
+
+// currentZoom returns the current zoom level
+func (v *ComicView) currentZoom() float64 {
+	if v.zoomIndex >= 0 && v.zoomIndex < len(zoomLevels) {
+		return zoomLevels[v.zoomIndex]
+	}
+	return 1.0
+}
+
+// isZoomed returns true if currently zoomed in
+func (v *ComicView) isZoomed() bool {
+	return v.zoomIndex > 0
 }
 
 // comicPagesLoadedMsg is sent when page count is retrieved
@@ -87,64 +118,198 @@ func (v *ComicView) Init() tea.Cmd {
 func (v *ComicView) Update(msg tea.Msg) (View, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "q", "esc":
-			// Clear terminal images using protocol-specific commands before switching views
-			terminal.ClearImagesCmd(v.termMode)()
-			return v, SwitchTo(ViewLibrary)
-		case "j", "down", "l", "right", "n", " ", "pgdown":
-			// Next page
-			if v.currentPage < v.pageCount {
-				v.currentPage++
-				v.imageLoaded = false
-				return v, v.loadPage(v.currentPage)
-			}
-		case "k", "up", "h", "left", "p", "pgup":
-			// Previous page
-			if v.currentPage > 1 {
-				v.currentPage--
-				v.imageLoaded = false
-				return v, v.loadPage(v.currentPage)
-			}
-		case "g", "home":
-			// First page
-			if v.currentPage != 1 {
-				v.currentPage = 1
-				v.imageLoaded = false
-				return v, v.loadPage(v.currentPage)
-			}
-		case "G", "end":
-			// Last page
-			if v.currentPage != v.pageCount && v.pageCount > 0 {
-				v.currentPage = v.pageCount
-				v.imageLoaded = false
-				return v, v.loadPage(v.currentPage)
-			}
-		}
-
+		return v.handleKeyMsg(msg)
 	case comicPagesLoadedMsg:
-		v.loading = false
+		return v.handlePagesLoaded(msg)
+	case comicPageLoadedMsg:
+		return v.handlePageLoaded(msg)
+	}
+	return v, nil
+}
+
+// handleKeyMsg processes key presses
+func (v *ComicView) handleKeyMsg(msg tea.KeyMsg) (View, tea.Cmd) {
+	key := msg.String()
+
+	// Exit
+	if key == "q" || key == "esc" {
+		terminal.ClearImagesCmd(v.termMode)()
+		return v, SwitchTo(ViewLibrary)
+	}
+
+	// Zoom controls
+	switch key {
+	case "+", "=":
+		v.zoomIn()
+		return v, nil
+	case "-", "_":
+		v.zoomOut()
+		return v, nil
+	case "0":
+		v.resetZoomPan()
+		return v, nil
+	}
+
+	// When zoomed, arrow keys pan; when not zoomed, they navigate pages
+	if v.isZoomed() {
+		switch key {
+		case "h", "left":
+			v.panLeft()
+			return v, nil
+		case "l", "right":
+			v.panRight()
+			return v, nil
+		case "k", "up":
+			v.panUp()
+			return v, nil
+		case "j", "down":
+			v.panDown()
+			return v, nil
+		}
+	}
+
+	// Page navigation (when not zoomed, or using specific keys)
+	switch key {
+	case "n", " ", "pgdown":
+		return v, v.nextPage()
+	case "p", "pgup":
+		return v, v.prevPage()
+	case "g", "home":
+		return v, v.firstPage()
+	case "G", "end":
+		return v, v.lastPage()
+	}
+
+	// When not zoomed, h/l also navigate pages
+	if !v.isZoomed() {
+		switch key {
+		case "l", "right", "j", "down":
+			return v, v.nextPage()
+		case "h", "left", "k", "up":
+			return v, v.prevPage()
+		}
+	}
+
+	return v, nil
+}
+
+// Zoom methods
+func (v *ComicView) zoomIn() {
+	if v.zoomIndex < len(zoomLevels)-1 {
+		v.zoomIndex++
+	}
+}
+
+func (v *ComicView) zoomOut() {
+	if v.zoomIndex > 0 {
+		v.zoomIndex--
+		// Reset pan to center when zooming out to 1x
+		if v.zoomIndex == 0 {
+			v.panX = 0.5
+			v.panY = 0.5
+		}
+	}
+}
+
+// Pan methods (move in 10% increments)
+const panStep = 0.1
+
+func (v *ComicView) panLeft() {
+	v.panX -= panStep
+	if v.panX < 0 {
+		v.panX = 0
+	}
+}
+
+func (v *ComicView) panRight() {
+	v.panX += panStep
+	if v.panX > 1 {
+		v.panX = 1
+	}
+}
+
+func (v *ComicView) panUp() {
+	v.panY -= panStep
+	if v.panY < 0 {
+		v.panY = 0
+	}
+}
+
+func (v *ComicView) panDown() {
+	v.panY += panStep
+	if v.panY > 1 {
+		v.panY = 1
+	}
+}
+
+// Page navigation methods
+func (v *ComicView) nextPage() tea.Cmd {
+	if v.currentPage < v.pageCount {
+		v.currentPage++
+		v.imageLoaded = false
+		v.decodedImg = nil
+		v.resetZoomPan()
+		return v.loadPage(v.currentPage)
+	}
+	return nil
+}
+
+func (v *ComicView) prevPage() tea.Cmd {
+	if v.currentPage > 1 {
+		v.currentPage--
+		v.imageLoaded = false
+		v.decodedImg = nil
+		v.resetZoomPan()
+		return v.loadPage(v.currentPage)
+	}
+	return nil
+}
+
+func (v *ComicView) firstPage() tea.Cmd {
+	if v.currentPage != 1 {
+		v.currentPage = 1
+		v.imageLoaded = false
+		v.decodedImg = nil
+		v.resetZoomPan()
+		return v.loadPage(v.currentPage)
+	}
+	return nil
+}
+
+func (v *ComicView) lastPage() tea.Cmd {
+	if v.currentPage != v.pageCount && v.pageCount > 0 {
+		v.currentPage = v.pageCount
+		v.imageLoaded = false
+		v.decodedImg = nil
+		v.resetZoomPan()
+		return v.loadPage(v.currentPage)
+	}
+	return nil
+}
+
+// Message handlers
+func (v *ComicView) handlePagesLoaded(msg comicPagesLoadedMsg) (View, tea.Cmd) {
+	v.loading = false
+	if msg.err != nil {
+		v.err = msg.err
+		return v, nil
+	}
+	v.pageCount = msg.pageCount
+	return v, v.loadPage(1)
+}
+
+func (v *ComicView) handlePageLoaded(msg comicPageLoadedMsg) (View, tea.Cmd) {
+	if msg.page == v.currentPage {
 		if msg.err != nil {
 			v.err = msg.err
 			return v, nil
 		}
-		v.pageCount = msg.pageCount
-		// Load first page
-		return v, v.loadPage(1)
-
-	case comicPageLoadedMsg:
-		if msg.page == v.currentPage {
-			if msg.err != nil {
-				v.err = msg.err
-				return v, nil
-			}
-			v.imageData = msg.data
-			v.imageType = msg.imageType
-			v.imageLoaded = true
-			v.err = nil
-		}
+		v.imageData = msg.data
+		v.imageType = msg.imageType
+		v.imageLoaded = true
+		v.decodedImg = nil // Will be decoded on render
+		v.err = nil
 	}
-
 	return v, nil
 }
 
@@ -216,21 +381,26 @@ func (v *ComicView) renderHeader() string {
 		maxTitleWidth = v.width / 2
 	}
 	title := styles.TruncateText(v.book.Title, maxTitleWidth)
-	titleBar := styles.TitleBar.Render(" " + title + " ")
+	titlePart := styles.BookTitle.Render(title)
 
-	// Page indicator
-	pageInfo := ""
+	// Page and zoom indicator
+	rightPart := ""
 	if v.pageCount > 0 {
-		pageInfo = styles.Help.Render(fmt.Sprintf(" Page %d/%d ", v.currentPage, v.pageCount))
+		pageStr := fmt.Sprintf("%d/%d", v.currentPage, v.pageCount)
+		if v.isZoomed() {
+			zoomPct := int(v.currentZoom() * 100)
+			pageStr += fmt.Sprintf(" [%d%%]", zoomPct)
+		}
+		rightPart = styles.MutedText.Render(pageStr)
 	}
 
 	// Combine
-	gap := v.width - lipgloss.Width(titleBar) - lipgloss.Width(pageInfo)
+	gap := v.width - lipgloss.Width(titlePart) - lipgloss.Width(rightPart)
 	if gap < 0 {
 		gap = 0
 	}
 
-	return titleBar + strings.Repeat(" ", gap) + pageInfo
+	return titlePart + strings.Repeat(" ", gap) + rightPart
 }
 
 // renderImage renders the current page image to the terminal
@@ -239,14 +409,20 @@ func (v *ComicView) renderImage() string {
 		return styles.MutedText.Render("No image data")
 	}
 
-	// Decode the image
-	img, _, err := image.Decode(bytes.NewReader(v.imageData))
-	if err != nil {
-		return styles.ErrorStyle.Render("Failed to decode image: " + err.Error())
+	// Decode and cache the image if not already done
+	if v.decodedImg == nil {
+		img, _, err := image.Decode(bytes.NewReader(v.imageData))
+		if err != nil {
+			return styles.ErrorStyle.Render("Failed to decode image: " + err.Error())
+		}
+		v.decodedImg = img
 	}
 
+	// Get the image to render (possibly cropped for zoom)
+	imgToRender := v.getViewportImage()
+
 	// Use shared utility to render the image
-	imgStr, renderErr := terminal.RenderImageToString(img, v.termMode)
+	imgStr, renderErr := terminal.RenderImageToString(imgToRender, v.termMode)
 	if renderErr != nil {
 		return styles.ErrorStyle.Render("Render error: " + renderErr.Error())
 	}
@@ -254,13 +430,91 @@ func (v *ComicView) renderImage() string {
 	return imgStr
 }
 
+// getViewportImage returns the portion of the image visible at current zoom/pan
+func (v *ComicView) getViewportImage() image.Image {
+	if v.decodedImg == nil {
+		return nil
+	}
+
+	zoom := v.currentZoom()
+	if zoom <= 1.0 {
+		// No zoom, return full image
+		return v.decodedImg
+	}
+
+	bounds := v.decodedImg.Bounds()
+	imgWidth := bounds.Dx()
+	imgHeight := bounds.Dy()
+
+	// Calculate viewport size (1/zoom of the full image)
+	viewWidth := int(float64(imgWidth) / zoom)
+	viewHeight := int(float64(imgHeight) / zoom)
+
+	// Calculate viewport position based on pan (0.0-1.0)
+	// Pan represents the center of the viewport
+	maxOffsetX := imgWidth - viewWidth
+	maxOffsetY := imgHeight - viewHeight
+
+	offsetX := int(v.panX * float64(maxOffsetX))
+	offsetY := int(v.panY * float64(maxOffsetY))
+
+	// Clamp offsets
+	if offsetX < 0 {
+		offsetX = 0
+	}
+	if offsetY < 0 {
+		offsetY = 0
+	}
+	if offsetX > maxOffsetX {
+		offsetX = maxOffsetX
+	}
+	if offsetY > maxOffsetY {
+		offsetY = maxOffsetY
+	}
+
+	// Create cropped image using SubImage if available
+	type subImager interface {
+		SubImage(r image.Rectangle) image.Image
+	}
+
+	if si, ok := v.decodedImg.(subImager); ok {
+		cropRect := image.Rect(
+			bounds.Min.X+offsetX,
+			bounds.Min.Y+offsetY,
+			bounds.Min.X+offsetX+viewWidth,
+			bounds.Min.Y+offsetY+viewHeight,
+		)
+		return si.SubImage(cropRect)
+	}
+
+	// Fallback: return full image if SubImage not supported
+	return v.decodedImg
+}
+
 // renderFooter renders the footer help with consistent styling
 func (v *ComicView) renderFooter() string {
-	help := []string{
-		styles.HelpKey.Render("h/l") + styles.Help.Render(" prev/next"),
-		styles.HelpKey.Render("g/G") + styles.Help.Render(" first/last"),
-		styles.HelpKey.Render("q") + styles.Help.Render(" back"),
+	var help []string
+
+	if v.isZoomed() {
+		// Zoomed mode: show pan controls
+		zoomPct := int(v.currentZoom() * 100)
+		help = []string{
+			styles.HelpKey.Render("hjkl") + styles.Help.Render(" pan"),
+			styles.HelpKey.Render("+/-") + styles.Help.Render(fmt.Sprintf(" zoom (%d%%)", zoomPct)),
+			styles.HelpKey.Render("0") + styles.Help.Render(" reset"),
+			styles.HelpKey.Render("n/p") + styles.Help.Render(" page"),
+			styles.HelpKey.Render("q") + styles.Help.Render(" back"),
+		}
+	} else {
+		// Normal mode: show page navigation
+		help = []string{
+			styles.HelpKey.Render("h/l") + styles.Help.Render(" prev/next"),
+			styles.HelpKey.Render("g/G") + styles.Help.Render(" first/last"),
+			styles.HelpKey.Render("+/-") + styles.Help.Render(" zoom"),
+			styles.HelpKey.Render("q") + styles.Help.Render(" back"),
+		}
 	}
+
 	return styles.FooterBar.Width(v.width).Render(strings.Join(help, "  "))
 }
 
