@@ -311,9 +311,11 @@ func (a *App) renderHelp() string {
 			"  B       Add bookmark\n" +
 			"  b       View bookmarks\n\n" +
 			styles.HelpKey.Render("Comic Viewer") + "\n" +
-			"  l/n     Next page\n" +
-			"  h/p     Previous page\n" +
-			"  g/G     First/Last page\n\n" +
+			"  hjkl    Navigate pages\n" +
+			"  [/]     First/Last page\n" +
+			"  ←→↑↓    Pan/scroll image\n" +
+			"  +/-     Zoom in/out\n" +
+			"  0       Reset zoom\n\n" +
 			styles.HelpKey.Render("Library") + "\n" +
 			"  /       Search\n" +
 			"  s       Sort\n" +

@@ -81,6 +81,11 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	// Ensure ServerURL has a value (empty string in JSON shouldn't override default)
+	if cfg.ServerURL == "" {
+		cfg.ServerURL = DefaultServerURL
+	}
+
 	cfg.path = configPath
 	return cfg, nil
 }

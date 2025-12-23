@@ -137,7 +137,7 @@ func (v *ComicView) handleKeyMsg(msg tea.KeyMsg) (View, tea.Cmd) {
 		return v, SwitchTo(ViewLibrary)
 	}
 
-	// Zoom controls
+	// Zoom controls (+ zooms in, - zooms out)
 	switch key {
 	case "+", "=":
 		v.zoomIn()
@@ -150,44 +150,36 @@ func (v *ComicView) handleKeyMsg(msg tea.KeyMsg) (View, tea.Cmd) {
 		return v, nil
 	}
 
-	// When zoomed, arrow keys pan; when not zoomed, they navigate pages
-	if v.isZoomed() {
-		switch key {
-		case "h", "left":
-			v.panLeft()
-			return v, nil
-		case "l", "right":
-			v.panRight()
-			return v, nil
-		case "k", "up":
-			v.panUp()
-			return v, nil
-		case "j", "down":
-			v.panDown()
-			return v, nil
-		}
-	}
-
-	// Page navigation (when not zoomed, or using specific keys)
+	// Arrow keys always pan the viewport (scroll within zoomed image)
 	switch key {
-	case "n", " ", "pgdown":
-		return v, v.nextPage()
-	case "p", "pgup":
-		return v, v.prevPage()
-	case "g", "home":
-		return v, v.firstPage()
-	case "G", "end":
-		return v, v.lastPage()
+	case "left":
+		v.panLeft()
+		return v, nil
+	case "right":
+		v.panRight()
+		return v, nil
+	case "up":
+		v.panUp()
+		return v, nil
+	case "down":
+		v.panDown()
+		return v, nil
 	}
 
-	// When not zoomed, h/l also navigate pages
-	if !v.isZoomed() {
-		switch key {
-		case "l", "right", "j", "down":
-			return v, v.nextPage()
-		case "h", "left", "k", "up":
-			return v, v.prevPage()
-		}
+	// Vim keys (h/j/k/l) navigate pages
+	switch key {
+	case "l", "j", "n", " ", "pgdown":
+		return v, v.nextPage()
+	case "h", "k", "p", "pgup":
+		return v, v.prevPage()
+	}
+
+	// Bracket keys for first/last page
+	switch key {
+	case "[", "g", "home":
+		return v, v.firstPage()
+	case "]", "G", "end":
+		return v, v.lastPage()
 	}
 
 	return v, nil
@@ -499,21 +491,23 @@ func (v *ComicView) renderFooter() string {
 	var help []string
 
 	if v.isZoomed() {
-		// Zoomed mode: show pan controls
+		// Zoomed mode: show pan and zoom controls
 		zoomPct := int(v.currentZoom() * 100)
 		help = []string{
-			styles.HelpKey.Render("hjkl") + styles.Help.Render(" pan"),
+			styles.HelpKey.Render("←→↑↓") + styles.Help.Render(" pan"),
 			styles.HelpKey.Render("+/-") + styles.Help.Render(fmt.Sprintf(" zoom (%d%%)", zoomPct)),
 			styles.HelpKey.Render("0") + styles.Help.Render(" reset"),
-			styles.HelpKey.Render("n/p") + styles.Help.Render(" page"),
+			styles.HelpKey.Render("hjkl") + styles.Help.Render(" page"),
+			styles.HelpKey.Render("[]") + styles.Help.Render(" first/last"),
 			styles.HelpKey.Render("q") + styles.Help.Render(" back"),
 		}
 	} else {
 		// Normal mode: show page navigation
 		help = []string{
-			styles.HelpKey.Render("h/l") + styles.Help.Render(" prev/next"),
-			styles.HelpKey.Render("g/G") + styles.Help.Render(" first/last"),
+			styles.HelpKey.Render("hjkl") + styles.Help.Render(" prev/next"),
+			styles.HelpKey.Render("[]") + styles.Help.Render(" first/last"),
 			styles.HelpKey.Render("+/-") + styles.Help.Render(" zoom"),
+			styles.HelpKey.Render("←→↑↓") + styles.Help.Render(" pan"),
 			styles.HelpKey.Render("q") + styles.Help.Render(" back"),
 		}
 	}

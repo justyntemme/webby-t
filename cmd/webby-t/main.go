@@ -18,8 +18,11 @@ func main() {
 	// Define flags
 	uploadFiles := flag.String("upload", "", "Upload epub file(s) to the server (comma-separated or glob pattern)")
 	flag.StringVar(uploadFiles, "u", "", "Upload epub file(s) (shorthand)")
+	serverURL := flag.String("url", "", "Server URL (e.g., http://myserver:8080)")
+	flag.StringVar(serverURL, "s", "", "Server URL (shorthand)")
 	showHelp := flag.Bool("help", false, "Show help message")
 	flag.BoolVar(showHelp, "h", false, "Show help (shorthand)")
+	debug := flag.Bool("debug", false, "Show debug information")
 
 	flag.Parse()
 
@@ -33,6 +36,26 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Override server URL if provided via flag
+	if *serverURL != "" {
+		cfg.ServerURL = *serverURL
+		// Save to config for future use
+		if err := cfg.Save(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not save server URL to config: %v\n", err)
+		}
+	}
+
+	// Debug mode
+	if *debug {
+		fmt.Printf("Config path: ~/.config/webby-t/config.json\n")
+		fmt.Printf("Server URL: %s\n", cfg.ServerURL)
+		fmt.Printf("Authenticated: %v\n", cfg.IsAuthenticated())
+		if cfg.Username != "" {
+			fmt.Printf("Username: %s\n", cfg.Username)
+		}
+		os.Exit(0)
 	}
 
 	// Handle upload mode
@@ -73,10 +96,12 @@ func printUsage() {
 	fmt.Println("  webby-t -u '*.epub'         Upload files matching glob pattern")
 	fmt.Println()
 	fmt.Println("Options:")
+	fmt.Println("  -s, --url <url>        Set server URL (saved to config)")
 	fmt.Println("  -u, --upload <files>   Upload epub file(s) to the server")
 	fmt.Println("  -h, --help             Show this help message")
 	fmt.Println()
 	fmt.Println("Examples:")
+	fmt.Println("  webby-t --url http://myserver:8080")
 	fmt.Println("  webby-t book.epub")
 	fmt.Println("  webby-t book1.epub book2.epub")
 	fmt.Println("  webby-t -u 'books/*.epub'")
