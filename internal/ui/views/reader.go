@@ -142,169 +142,179 @@ func (v *ReaderView) Init() tea.Cmd {
 	)
 }
 
-// Update implements View
+// Update implements View - dispatches messages to specialized handlers
 func (v *ReaderView) Update(msg tea.Msg) (View, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// Clear bookmark message on any key
-		v.bookmarkMsg = ""
-
-		// TOC mode
-		if v.showTOC {
-			return v.updateTOC(msg)
-		}
-
-		// Bookmarks mode
-		if v.showBookmarks {
-			return v.updateBookmarks(msg)
-		}
-
-		// Search input mode
-		if v.searchMode {
-			return v.updateSearchInput(msg)
-		}
-
-		// Reader mode
-		switch msg.String() {
-		case "j", "down":
-			v.scroll(1)
-		case "k", "up":
-			v.scroll(-1)
-		case "ctrl+d", "pgdown":
-			v.scroll(v.visibleLines() / 2)
-		case "ctrl+u", "pgup":
-			v.scroll(-v.visibleLines() / 2)
-		case "g", "home":
-			v.lineOffset = 0
-		case "G", "end":
-			v.lineOffset = max(0, len(v.lines)-v.visibleLines())
-		case "n":
-			// Next search match (if search active) or next chapter
-			if v.searchActive && len(v.searchMatches) > 0 {
-				v.nextMatch()
-			} else if v.chapter < len(v.chapters)-1 {
-				return v, v.goToChapter(v.chapter + 1)
-			}
-		case "l":
-			// Next chapter
-			if v.chapter < len(v.chapters)-1 {
-				return v, v.goToChapter(v.chapter + 1)
-			}
-		case "p", "h":
-			// Previous chapter
-			if v.chapter > 0 {
-				return v, v.goToChapter(v.chapter - 1)
-			}
-		case "t":
-			// Toggle TOC
-			v.showTOC = true
-			v.tocCursor = v.chapter
-		case " ":
-			// Space for page down
-			v.scroll(v.visibleLines() - 2)
-		case "+", "=":
-			// Increase text size (= is unshifted + on most keyboards)
-			v.adjustTextScale(config.TextScaleStep)
-		case "-", "_":
-			// Decrease text size
-			v.adjustTextScale(-config.TextScaleStep)
-		case "0":
-			// Reset text size to default
-			v.setTextScale(config.DefaultTextScale)
-		case "B":
-			// Add bookmark at current position
-			v.addBookmark()
-		case "b":
-			// Show bookmarks list
-			v.showBookmarks = true
-			v.bookmarkCursor = 0
-		case "/":
-			// Enter search mode
-			v.searchMode = true
-			v.searchQuery = ""
-		case "N":
-			// Previous search match (if search is active)
-			if v.searchActive && len(v.searchMatches) > 0 {
-				v.prevMatch()
-			}
-		case "esc":
-			// Clear search if active
-			if v.searchActive {
-				v.clearSearch()
-			}
-		case "c":
-			// Toggle continuous scroll mode
-			return v, v.toggleContinuousMode()
-		}
-
+		v.bookmarkMsg = "" // Clear transient messages on any key
+		return v.handleKeyMsg(msg)
 	case tocLoadedMsg:
-		if msg.err != nil {
-			v.err = msg.err
-			v.loading = false
-			return v, nil
-		}
-		v.chapters = msg.chapters
-		// Load first chapter if we haven't loaded position yet
-		if v.content == "" && len(v.chapters) > 0 {
-			return v, v.loadChapter(v.chapter)
-		}
-		return v, nil
-
+		return v.handleTOCLoaded(msg)
 	case positionLoadedMsg:
-		if msg.err == nil && msg.position != nil {
-			// Parse chapter from position
-			var chapterNum int
-			fmt.Sscanf(msg.position.Chapter, "%d", &chapterNum)
-			if chapterNum >= 0 && (len(v.chapters) == 0 || chapterNum < len(v.chapters)) {
-				v.chapter = chapterNum
-				// Store position to restore after chapter loads
-				v.pendingPosition = msg.position.Position
-				v.hasPendingPos = true
-			}
-		}
-		// Load the chapter
-		return v, v.loadChapter(v.chapter)
-
+		return v.handlePositionLoaded(msg)
 	case chapterLoadedMsg:
-		v.loading = false
-		if msg.err != nil {
-			v.err = msg.err
-			return v, nil
-		}
-		v.content = msg.content
-		v.chapter = msg.chapter
-		v.wrapContent()
-		v.err = nil
-		// Restore saved position if available
-		if v.hasPendingPos && len(v.lines) > 0 {
-			v.lineOffset = int(v.pendingPosition * float64(len(v.lines)))
-			// Clamp to valid range
-			maxOffset := len(v.lines) - v.visibleLines()
-			if maxOffset < 0 {
-				maxOffset = 0
-			}
-			if v.lineOffset > maxOffset {
-				v.lineOffset = maxOffset
-			}
-			if v.lineOffset < 0 {
-				v.lineOffset = 0
-			}
-			v.hasPendingPos = false
-		}
-		return v, nil
-
+		return v.handleChapterLoaded(msg)
 	case allChaptersLoadedMsg:
-		v.loading = false
-		if msg.err != nil {
-			v.err = msg.err
-			return v, nil
+		return v.handleAllChaptersLoaded(msg)
+	}
+	return v, nil
+}
+
+// handleKeyMsg dispatches key messages to mode-specific handlers
+func (v *ReaderView) handleKeyMsg(msg tea.KeyMsg) (View, tea.Cmd) {
+	if v.showTOC {
+		return v.updateTOC(msg)
+	}
+	if v.showBookmarks {
+		return v.updateBookmarks(msg)
+	}
+	if v.searchMode {
+		return v.updateSearchInput(msg)
+	}
+	return v.handleReaderKeyMsg(msg)
+}
+
+// handleReaderKeyMsg handles key presses in the main reader view
+func (v *ReaderView) handleReaderKeyMsg(msg tea.KeyMsg) (View, tea.Cmd) {
+	switch msg.String() {
+	case "j", "down":
+		v.scroll(1)
+	case "k", "up":
+		v.scroll(-1)
+	case "ctrl+d", "pgdown":
+		v.scroll(v.visibleLines() / 2)
+	case "ctrl+u", "pgup":
+		v.scroll(-v.visibleLines() / 2)
+	case "g", "home":
+		v.lineOffset = 0
+	case "G", "end":
+		v.lineOffset = max(0, len(v.lines)-v.visibleLines())
+	case "n":
+		return v.handleNextAction()
+	case "l":
+		if v.chapter < len(v.chapters)-1 {
+			return v, v.goToChapter(v.chapter + 1)
 		}
-		// Build continuous content from all chapters
-		v.buildContinuousContent(msg.chapters)
-		v.err = nil
+	case "p", "h":
+		if v.chapter > 0 {
+			return v, v.goToChapter(v.chapter - 1)
+		}
+	case "t":
+		v.showTOC = true
+		v.tocCursor = v.chapter
+	case " ":
+		v.scroll(v.visibleLines() - 2)
+	case "+", "=":
+		v.adjustTextScale(config.TextScaleStep)
+	case "-", "_":
+		v.adjustTextScale(-config.TextScaleStep)
+	case "0":
+		v.setTextScale(config.DefaultTextScale)
+	case "B":
+		v.addBookmark()
+	case "b":
+		v.showBookmarks = true
+		v.bookmarkCursor = 0
+	case "/":
+		v.searchMode = true
+		v.searchQuery = ""
+	case "N":
+		if v.searchActive && len(v.searchMatches) > 0 {
+			v.prevMatch()
+		}
+	case "esc":
+		if v.searchActive {
+			v.clearSearch()
+		}
+	case "c":
+		return v, v.toggleContinuousMode()
+	}
+	return v, nil
+}
+
+// handleNextAction handles 'n' key - next match or next chapter
+func (v *ReaderView) handleNextAction() (View, tea.Cmd) {
+	if v.searchActive && len(v.searchMatches) > 0 {
+		v.nextMatch()
 		return v, nil
 	}
+	if v.chapter < len(v.chapters)-1 {
+		return v, v.goToChapter(v.chapter + 1)
+	}
+	return v, nil
+}
 
+// handleTOCLoaded processes the table of contents response
+func (v *ReaderView) handleTOCLoaded(msg tocLoadedMsg) (View, tea.Cmd) {
+	if msg.err != nil {
+		v.err = msg.err
+		v.loading = false
+		return v, nil
+	}
+	v.chapters = msg.chapters
+	if v.content == "" && len(v.chapters) > 0 {
+		return v, v.loadChapter(v.chapter)
+	}
+	return v, nil
+}
+
+// handlePositionLoaded processes the reading position response
+func (v *ReaderView) handlePositionLoaded(msg positionLoadedMsg) (View, tea.Cmd) {
+	if msg.err == nil && msg.position != nil {
+		var chapterNum int
+		fmt.Sscanf(msg.position.Chapter, "%d", &chapterNum)
+		if chapterNum >= 0 && (len(v.chapters) == 0 || chapterNum < len(v.chapters)) {
+			v.chapter = chapterNum
+			v.pendingPosition = msg.position.Position
+			v.hasPendingPos = true
+		}
+	}
+	return v, v.loadChapter(v.chapter)
+}
+
+// handleChapterLoaded processes a loaded chapter
+func (v *ReaderView) handleChapterLoaded(msg chapterLoadedMsg) (View, tea.Cmd) {
+	v.loading = false
+	if msg.err != nil {
+		v.err = msg.err
+		return v, nil
+	}
+	v.content = msg.content
+	v.chapter = msg.chapter
+	v.wrapContent()
+	v.err = nil
+	v.restorePendingPosition()
+	return v, nil
+}
+
+// restorePendingPosition restores saved position after chapter loads
+func (v *ReaderView) restorePendingPosition() {
+	if !v.hasPendingPos || len(v.lines) == 0 {
+		return
+	}
+	v.lineOffset = int(v.pendingPosition * float64(len(v.lines)))
+	maxOffset := len(v.lines) - v.visibleLines()
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if v.lineOffset > maxOffset {
+		v.lineOffset = maxOffset
+	}
+	if v.lineOffset < 0 {
+		v.lineOffset = 0
+	}
+	v.hasPendingPos = false
+}
+
+// handleAllChaptersLoaded processes all chapters for continuous mode
+func (v *ReaderView) handleAllChaptersLoaded(msg allChaptersLoadedMsg) (View, tea.Cmd) {
+	v.loading = false
+	if msg.err != nil {
+		v.err = msg.err
+		return v, nil
+	}
+	v.buildContinuousContent(msg.chapters)
+	v.err = nil
 	return v, nil
 }
 
@@ -524,14 +534,14 @@ func renderProgressBar(width int, progress float64) string {
 	return bar.String()
 }
 
-// renderFooter renders the reader footer
+// renderFooter renders the reader footer with consistent styling
 func (v *ReaderView) renderFooter() string {
 	// Text scale indicator
 	scaleStr := fmt.Sprintf("%.0f%%", v.textScale*100)
 
 	// Show bookmark message if set
 	if v.bookmarkMsg != "" {
-		return styles.SecondaryText.Render(v.bookmarkMsg)
+		return styles.FooterBar.Width(v.width).Render(styles.SecondaryText.Render(v.bookmarkMsg))
 	}
 
 	// Show search status if search is active
@@ -547,25 +557,26 @@ func (v *ReaderView) renderFooter() string {
 			styles.HelpKey.Render("n/N") + styles.Help.Render(" next/prev"),
 			styles.HelpKey.Render("esc") + styles.Help.Render(" clear"),
 		}
-		return styles.BookAuthor.Render(searchStatus) + matchInfo + "  " + strings.Join(help, "  ")
+		content := styles.BookAuthor.Render(searchStatus) + matchInfo + "  " + strings.Join(help, "  ")
+		return styles.FooterBar.Width(v.width).Render(content)
 	}
 
 	// Mode indicator
 	modeStr := "paged"
 	if v.continuousMode {
-		modeStr = "continuous"
+		modeStr = "scroll"
 	}
 
 	help := []string{
 		styles.HelpKey.Render("j/k") + styles.Help.Render(" scroll"),
 		styles.HelpKey.Render("t") + styles.Help.Render(" toc"),
-		styles.HelpKey.Render("/") + styles.Help.Render(" search"),
+		styles.HelpKey.Render("/") + styles.Help.Render(" find"),
 		styles.HelpKey.Render("b/B") + styles.Help.Render(" marks"),
-		styles.HelpKey.Render("c") + styles.Help.Render(" mode:" + modeStr),
+		styles.HelpKey.Render("c") + styles.Help.Render(" " + modeStr),
 		styles.HelpKey.Render("+/-") + styles.Help.Render(" " + scaleStr),
 		styles.HelpKey.Render("q") + styles.Help.Render(" back"),
 	}
-	return strings.Join(help, "  ")
+	return styles.FooterBar.Width(v.width).Render(strings.Join(help, "  "))
 }
 
 // renderSearchInput renders the search input bar

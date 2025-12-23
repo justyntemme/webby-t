@@ -85,105 +85,109 @@ func (a *App) Init() tea.Cmd {
 	)
 }
 
-// Update implements tea.Model
+// Update implements tea.Model - dispatches to focused handlers
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmds []tea.Cmd
-
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		a.width = msg.Width
-		a.height = msg.Height
-		// Propagate to all views
-		a.loginView.SetSize(msg.Width, msg.Height)
-		a.libraryView.SetSize(msg.Width, msg.Height)
-		a.readerView.SetSize(msg.Width, msg.Height)
-		a.collectionsView.SetSize(msg.Width, msg.Height)
-		a.uploadView.SetSize(msg.Width, msg.Height)
-		a.comicView.SetSize(msg.Width, msg.Height)
-		a.bookDetailsView.SetSize(msg.Width, msg.Height)
+		a.handleWindowSize(msg)
 		return a, nil
-
 	case tea.KeyMsg:
-		// Global key handling
-		switch {
-		case key.Matches(msg, a.keys.Quit):
-			// In reader or comic viewer, go back to library instead of quitting
-			if a.currentView == views.ViewReader || a.currentView == views.ViewComic {
-				return a.switchView(views.ViewLibrary)
-			}
-			// In library when authenticated, also allow quitting
-			return a, tea.Quit
-
-		case key.Matches(msg, a.keys.Help):
-			a.showHelp = !a.showHelp
-			return a, nil
-
-		case key.Matches(msg, a.keys.Escape):
-			// Handle back navigation
-			if a.showHelp {
-				a.showHelp = false
-				return a, nil
-			}
-			if a.currentView == views.ViewReader {
-				return a.switchView(views.ViewLibrary)
-			}
-			if a.currentView == views.ViewTOC {
-				return a.switchView(views.ViewReader)
-			}
-			if a.currentView == views.ViewCollections {
-				return a.switchView(views.ViewLibrary)
-			}
-			if a.currentView == views.ViewUpload {
-				return a.switchView(views.ViewLibrary)
-			}
-			if a.currentView == views.ViewComic {
-				return a.switchView(views.ViewLibrary)
-			}
-			if a.currentView == views.ViewBookDetails {
-				return a.switchView(views.ViewLibrary)
-			}
+		if model, cmd := a.handleKeyMsg(msg); cmd != nil || model != a {
+			return model, cmd
 		}
+	case views.LoginSuccessMsg, views.LogoutMsg, views.OpenBookMsg,
+		views.ShowBookDetailsMsg, views.SwitchViewMsg, views.ErrorMsg, views.ClearErrorMsg:
+		return a.handleAppMsg(msg)
+	}
+	return a.delegateToView(msg)
+}
 
+// handleWindowSize propagates size changes to all views
+func (a *App) handleWindowSize(msg tea.WindowSizeMsg) {
+	a.width = msg.Width
+	a.height = msg.Height
+	a.loginView.SetSize(msg.Width, msg.Height)
+	a.libraryView.SetSize(msg.Width, msg.Height)
+	a.readerView.SetSize(msg.Width, msg.Height)
+	a.collectionsView.SetSize(msg.Width, msg.Height)
+	a.uploadView.SetSize(msg.Width, msg.Height)
+	a.comicView.SetSize(msg.Width, msg.Height)
+	a.bookDetailsView.SetSize(msg.Width, msg.Height)
+}
+
+// handleKeyMsg processes global keybindings
+func (a *App) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, a.keys.Quit):
+		if a.currentView == views.ViewReader || a.currentView == views.ViewComic {
+			return a.switchView(views.ViewLibrary)
+		}
+		return a, tea.Quit
+	case key.Matches(msg, a.keys.Help):
+		a.showHelp = !a.showHelp
+		return a, nil
+	case key.Matches(msg, a.keys.Escape):
+		return a.handleEscapeKey()
+	}
+	return a, nil
+}
+
+// handleEscapeKey centralizes back-navigation logic
+func (a *App) handleEscapeKey() (tea.Model, tea.Cmd) {
+	if a.showHelp {
+		a.showHelp = false
+		return a, nil
+	}
+	backMap := map[views.ViewType]views.ViewType{
+		views.ViewReader:      views.ViewLibrary,
+		views.ViewTOC:         views.ViewReader,
+		views.ViewCollections: views.ViewLibrary,
+		views.ViewUpload:      views.ViewLibrary,
+		views.ViewComic:       views.ViewLibrary,
+		views.ViewBookDetails: views.ViewLibrary,
+	}
+	if dest, ok := backMap[a.currentView]; ok {
+		return a.switchView(dest)
+	}
+	return a, nil
+}
+
+// handleAppMsg processes application-level events
+func (a *App) handleAppMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
 	case views.LoginSuccessMsg:
 		a.user = &msg.User
 		a.config.Username = msg.User.Username
 		return a.switchView(views.ViewLibrary)
-
 	case views.LogoutMsg:
 		a.user = nil
 		a.config.ClearToken()
 		return a.switchView(views.ViewLogin)
-
 	case views.OpenBookMsg:
-		// Track recently read
 		_ = a.config.AddRecentlyRead(msg.Book.ID, msg.Book.Title)
-
-		// Route CBZ files to comic viewer, everything else to text reader
-		// (EPUB comics still use text reader as they have chapter-based content)
 		if msg.Book.IsCBZ() {
 			a.comicView.(*views.ComicView).SetBook(msg.Book)
 			return a.switchView(views.ViewComic)
 		}
 		a.readerView.(*views.ReaderView).SetBook(msg.Book)
 		return a.switchView(views.ViewReader)
-
 	case views.ShowBookDetailsMsg:
 		a.bookDetailsView.(*views.BookDetailsView).SetBook(msg.Book)
 		return a.switchView(views.ViewBookDetails)
-
 	case views.ErrorMsg:
 		a.err = msg.Err
 		return a, nil
-
 	case views.ClearErrorMsg:
 		a.err = nil
 		return a, nil
-
 	case views.SwitchViewMsg:
 		return a.switchView(msg.View)
 	}
+	return a, nil
+}
 
-	// Delegate to current view
+// delegateToView passes messages to the current view
+func (a *App) delegateToView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch a.currentView {
 	case views.ViewLogin, views.ViewRegister:
@@ -201,9 +205,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case views.ViewBookDetails:
 		a.bookDetailsView, cmd = a.bookDetailsView.Update(msg)
 	}
-	cmds = append(cmds, cmd)
-
-	return a, tea.Batch(cmds...)
+	return a, cmd
 }
 
 // View implements tea.Model

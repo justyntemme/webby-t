@@ -239,307 +239,358 @@ func (v *LibraryView) Init() tea.Cmd {
 	return v.loadBooks()
 }
 
-// Update implements View
+// Update implements View - delegates to specialized handlers
 func (v *LibraryView) Update(msg tea.Msg) (View, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// Handle delete confirmation mode
-		if v.confirmDelete {
-			switch msg.String() {
-			case "y", "Y":
-				// Confirm delete
-				v.confirmDelete = false
-				if v.deleteBook != nil {
-					return v, v.deleteBookCmd(v.deleteBook.ID)
-				}
-			case "n", "N", "esc":
-				// Cancel delete
-				v.confirmDelete = false
-				v.deleteBook = nil
-			}
-			return v, nil
-		}
-
-		// Handle search mode
-		if v.searchMode {
-			switch msg.String() {
-			case "esc":
-				v.searchMode = false
-				v.searchInput.Blur()
-				return v, nil
-			case "enter":
-				v.searchMode = false
-				v.searchInput.Blur()
-				v.page = 1
-				return v, v.loadBooks()
-			default:
-				var cmd tea.Cmd
-				v.searchInput, cmd = v.searchInput.Update(msg)
-				return v, cmd
-			}
-		}
-
-		// Normal mode key handling
-		switch msg.String() {
-		case "j", "down":
-			v.moveCursor(1)
-		case "k", "up":
-			v.moveCursor(-1)
-		case "g", "home":
-			v.cursor = 0
-			v.offset = 0
-		case "G", "end":
-			v.cursor = len(v.books) - 1
-			v.updateOffset()
-		case "ctrl+d", "pgdown":
-			v.moveCursor(v.visibleLines() / 2)
-		case "ctrl+u", "pgup":
-			v.moveCursor(-v.visibleLines() / 2)
-		case "/":
-			v.searchMode = true
-			v.searchInput.Focus()
-			return v, textinput.Blink
-		case "s":
-			// Cycle sort field
-			v.sortBy = (v.sortBy + 1) % 4
-			v.page = 1
-			return v, v.loadBooks()
-		case "S":
-			// Toggle sort order
-			v.sortAsc = !v.sortAsc
-			v.page = 1
-			return v, v.loadBooks()
-		case "enter":
-			if len(v.books) > 0 && v.cursor < len(v.books) {
-				book := v.books[v.cursor]
-				return v, func() tea.Msg {
-					return OpenBookMsg{Book: book}
-				}
-			}
-		case "n":
-			// Next page
-			if v.hasNextPage() {
-				v.page++
-				return v, v.loadBooks()
-			}
-		case "p":
-			// Previous page
-			if v.page > 1 {
-				v.page--
-				return v, v.loadBooks()
-			}
-		case "r":
-			// Refresh
-			return v, v.loadBooks()
-		case "c":
-			// Collections
-			return v, SwitchTo(ViewCollections)
-		case "a":
-			// Add/upload book
-			return v, SwitchTo(ViewUpload)
-		case "b":
-			// Filter books only
-			if v.contentType == models.ContentTypeBook {
-				v.contentType = "" // Toggle off
-			} else {
-				v.contentType = models.ContentTypeBook
-			}
-			v.page = 1
-			return v, v.loadBooks()
-		case "m":
-			// Filter comics only
-			if v.contentType == models.ContentTypeComic {
-				v.contentType = "" // Toggle off
-			} else {
-				v.contentType = models.ContentTypeComic
-			}
-			v.page = 1
-			return v, v.loadBooks()
-		case "v":
-			// Cycle through content types: all -> books -> comics -> all
-			switch v.contentType {
-			case "":
-				v.contentType = models.ContentTypeBook
-			case models.ContentTypeBook:
-				v.contentType = models.ContentTypeComic
-			case models.ContentTypeComic:
-				v.contentType = ""
-			}
-			v.page = 1
-			return v, v.loadBooks()
-		case "R":
-			// Toggle recently read filter
-			v.recentlyReadMode = !v.recentlyReadMode
-			v.page = 1
-			v.cursor = 0
-			v.offset = 0
-			return v, v.loadBooks()
-		case "d":
-			// Delete book (with confirmation)
-			if len(v.books) > 0 && v.cursor < len(v.books) {
-				book := v.books[v.cursor]
-				v.deleteBook = &book
-				v.confirmDelete = true
-			}
-		case "f":
-			// Toggle favorite on selected book
-			if len(v.books) > 0 && v.cursor < len(v.books) && v.config != nil {
-				book := v.books[v.cursor]
-				_ = v.config.ToggleFavorite(book.ID)
-			}
-		case "F":
-			// Toggle favorites filter
-			v.favoritesMode = !v.favoritesMode
-			v.queueMode = false
-			v.page = 1
-			v.cursor = 0
-			v.offset = 0
-			return v, v.loadBooks()
-		case "w":
-			// Toggle reading queue on selected book
-			if len(v.books) > 0 && v.cursor < len(v.books) && v.config != nil {
-				book := v.books[v.cursor]
-				_ = v.config.ToggleQueue(book.ID)
-			}
-		case "W":
-			// Toggle reading queue filter
-			v.queueMode = !v.queueMode
-			v.favoritesMode = false
-			v.page = 1
-			v.cursor = 0
-			v.offset = 0
-			return v, v.loadBooks()
-		case "J":
-			// Move book down in queue (when in queue mode)
-			if v.queueMode && len(v.books) > 0 && v.cursor < len(v.books) && v.config != nil {
-				book := v.books[v.cursor]
-				_ = v.config.MoveInQueue(book.ID, 1)
-				if v.cursor < len(v.books)-1 {
-					v.cursor++
-				}
-				return v, v.loadBooks()
-			}
-		case "K":
-			// Move book up in queue (when in queue mode)
-			if v.queueMode && len(v.books) > 0 && v.cursor < len(v.books) && v.config != nil {
-				book := v.books[v.cursor]
-				_ = v.config.MoveInQueue(book.ID, -1)
-				if v.cursor > 0 {
-					v.cursor--
-				}
-				return v, v.loadBooks()
-			}
-		case "A":
-			// Filter by selected book's author
-			if len(v.books) > 0 && v.cursor < len(v.books) {
-				book := v.books[v.cursor]
-				if book.Author != "" {
-					v.filterAuthor = book.Author
-					v.filterSeries = ""
-					v.page = 1
-					v.cursor = 0
-					v.offset = 0
-					return v, v.loadBooks()
-				}
-			}
-		case "E":
-			// Filter by selected book's series (E for sEries, since S is sort)
-			if len(v.books) > 0 && v.cursor < len(v.books) {
-				book := v.books[v.cursor]
-				if book.Series != "" {
-					v.filterSeries = book.Series
-					v.filterAuthor = ""
-					v.page = 1
-					v.cursor = 0
-					v.offset = 0
-					return v, v.loadBooks()
-				}
-			}
-		case "x":
-			// Clear author/series filter
-			if v.filterAuthor != "" || v.filterSeries != "" {
-				v.filterAuthor = ""
-				v.filterSeries = ""
-				v.page = 1
-				v.cursor = 0
-				v.offset = 0
-				return v, v.loadBooks()
-			}
-		case "i":
-			// Show book details
-			if len(v.books) > 0 && v.cursor < len(v.books) {
-				book := v.books[v.cursor]
-				return v, func() tea.Msg {
-					return ShowBookDetailsMsg{Book: book}
-				}
-			}
-		case "T":
-			// Cycle through themes
-			newTheme := styles.NextTheme()
-			if v.config != nil {
-				_ = v.config.SetTheme(newTheme)
-			}
-			return v, NotifyThemeChanged(newTheme)
-		case "C":
-			// Toggle cover thumbnails (only if terminal supports images)
-			if v.termMode != terminal.TermModeNone {
-				v.showCovers = !v.showCovers
-				// Load covers if enabling and we have books
-				if v.showCovers && len(v.books) > 0 {
-					var cmds []tea.Cmd
-					visibleCount := v.visibleLines()
-					for i := 0; i < min(visibleCount, len(v.books)); i++ {
-						if cmd := v.loadCoverCmd(v.books[i].ID); cmd != nil {
-							cmds = append(cmds, cmd)
-						}
-					}
-					return v, tea.Batch(cmds...)
-				}
-			}
-		}
-
+		return v.handleKeyMsg(msg)
 	case booksLoadedMsg:
-		v.loading = false
-		if msg.err != nil {
-			v.err = msg.err
-			return v, nil
-		}
-		v.books = msg.books
-		v.total = msg.total
-		v.err = nil
-		if v.cursor >= len(v.books) {
-			v.cursor = max(0, len(v.books)-1)
-		}
-
-		// Load covers for visible books if image support available
-		var cmds []tea.Cmd
-		if v.termMode != terminal.TermModeNone {
-			visibleCount := v.visibleLines()
-			for i := 0; i < min(visibleCount, len(v.books)); i++ {
-				if cmd := v.loadCoverCmd(v.books[i].ID); cmd != nil {
-					cmds = append(cmds, cmd)
-				}
-			}
-		}
-		return v, tea.Batch(cmds...)
-
+		return v, v.handleBooksLoaded(msg)
 	case coverLoadedMsg:
-		if msg.err == nil && msg.renderedImage != "" {
-			v.coverCache[msg.bookID] = msg.renderedImage
-		}
-		return v, nil
-
+		return v, v.handleCoverLoaded(msg)
 	case bookDeletedMsg:
-		v.deleteBook = nil
-		if msg.err != nil {
-			v.err = msg.err
-			return v, nil
+		return v, v.handleBookDeleted(msg)
+	}
+	return v, nil
+}
+
+// ============================================================
+// Helper Methods
+// ============================================================
+
+// getSelectedBook safely retrieves the book at the current cursor position
+func (v *LibraryView) getSelectedBook() (models.Book, bool) {
+	if v.cursor >= 0 && v.cursor < len(v.books) {
+		return v.books[v.cursor], true
+	}
+	return models.Book{}, false
+}
+
+// resetAndLoadBooks resets pagination/cursor and reloads books
+func (v *LibraryView) resetAndLoadBooks() tea.Cmd {
+	v.page = 1
+	v.cursor = 0
+	v.offset = 0
+	return v.loadBooks()
+}
+
+// loadVisibleCovers loads cover images for currently visible books
+func (v *LibraryView) loadVisibleCovers() tea.Cmd {
+	if v.termMode == terminal.TermModeNone || !v.showCovers {
+		return nil
+	}
+	var cmds []tea.Cmd
+	visibleCount := v.visibleLines()
+	for i := 0; i < min(visibleCount, len(v.books)); i++ {
+		if cmd := v.loadCoverCmd(v.books[i].ID); cmd != nil {
+			cmds = append(cmds, cmd)
 		}
-		// Refresh the book list
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
+}
+
+// ============================================================
+// Key Handlers
+// ============================================================
+
+// handleKeyMsg dispatches key presses based on current mode
+func (v *LibraryView) handleKeyMsg(msg tea.KeyMsg) (View, tea.Cmd) {
+	// Modal states take priority
+	if v.confirmDelete {
+		return v.handleDeleteConfirmKeys(msg)
+	}
+	if v.searchMode {
+		return v.handleSearchInputKeys(msg)
+	}
+	return v.handleLibraryKeys(msg)
+}
+
+// handleDeleteConfirmKeys handles 'y'/'n' when confirming a deletion
+func (v *LibraryView) handleDeleteConfirmKeys(msg tea.KeyMsg) (View, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		v.confirmDelete = false
+		if v.deleteBook != nil {
+			return v, v.deleteBookCmd(v.deleteBook.ID)
+		}
+	case "n", "N", "esc":
+		v.confirmDelete = false
+		v.deleteBook = nil
+	}
+	return v, nil
+}
+
+// handleSearchInputKeys handles keys when the search input is active
+func (v *LibraryView) handleSearchInputKeys(msg tea.KeyMsg) (View, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		v.searchMode = false
+		v.searchInput.Blur()
+		return v, nil
+	case "enter":
+		v.searchMode = false
+		v.searchInput.Blur()
+		return v, v.resetAndLoadBooks()
+	default:
+		var cmd tea.Cmd
+		v.searchInput, cmd = v.searchInput.Update(msg)
+		return v, cmd
+	}
+}
+
+// handleLibraryKeys is the dispatcher for all keys in normal view
+func (v *LibraryView) handleLibraryKeys(msg tea.KeyMsg) (View, tea.Cmd) {
+	key := msg.String()
+
+	// Navigation keys (no command returned)
+	if v.handleNavigation(key) {
+		return v, nil
+	}
+
+	// Keys that return commands
+	switch key {
+	// Search
+	case "/":
+		v.searchMode = true
+		v.searchInput.Focus()
+		return v, textinput.Blink
+
+	// Sorting
+	case "s":
+		v.sortBy = (v.sortBy + 1) % 4
+		return v, v.resetAndLoadBooks()
+	case "S":
+		v.sortAsc = !v.sortAsc
+		return v, v.resetAndLoadBooks()
+
+	// Pagination
+	case "n":
+		if v.hasNextPage() {
+			v.page++
+			return v, v.loadBooks()
+		}
+	case "p":
+		if v.page > 1 {
+			v.page--
+			return v, v.loadBooks()
+		}
+	case "r":
 		return v, v.loadBooks()
+
+	// View switching
+	case "c":
+		return v, SwitchTo(ViewCollections)
+	case "a":
+		return v, SwitchTo(ViewUpload)
+
+	// Content filtering
+	case "b", "m", "v":
+		return v, v.handleContentFilter(key)
+	case "R":
+		v.recentlyReadMode = !v.recentlyReadMode
+		return v, v.resetAndLoadBooks()
+	case "F":
+		v.favoritesMode = !v.favoritesMode
+		v.queueMode = false
+		return v, v.resetAndLoadBooks()
+	case "W":
+		v.queueMode = !v.queueMode
+		v.favoritesMode = false
+		return v, v.resetAndLoadBooks()
+	case "x":
+		if v.filterAuthor != "" || v.filterSeries != "" {
+			v.filterAuthor = ""
+			v.filterSeries = ""
+			return v, v.resetAndLoadBooks()
+		}
+
+	// Book actions
+	case "enter", "d", "f", "w", "i", "A", "E":
+		return v.handleBookAction(key)
+
+	// Queue reordering
+	case "J", "K":
+		if v.queueMode {
+			return v.handleQueueReorder(key)
+		}
+
+	// Global actions
+	case "T":
+		newTheme := styles.NextTheme()
+		if v.config != nil {
+			_ = v.config.SetTheme(newTheme)
+		}
+		return v, NotifyThemeChanged(newTheme)
+	case "C":
+		return v.handleToggleCovers()
 	}
 
 	return v, nil
+}
+
+// handleNavigation processes navigation keys, returns true if handled
+func (v *LibraryView) handleNavigation(key string) bool {
+	switch key {
+	case "j", "down":
+		v.moveCursor(1)
+	case "k", "up":
+		v.moveCursor(-1)
+	case "g", "home":
+		v.cursor = 0
+		v.offset = 0
+	case "G", "end":
+		v.cursor = len(v.books) - 1
+		v.updateOffset()
+	case "ctrl+d", "pgdown":
+		v.moveCursor(v.visibleLines() / 2)
+	case "ctrl+u", "pgup":
+		v.moveCursor(-v.visibleLines() / 2)
+	default:
+		return false
+	}
+	return true
+}
+
+// handleContentFilter handles content type filtering keys
+func (v *LibraryView) handleContentFilter(key string) tea.Cmd {
+	switch key {
+	case "b":
+		if v.contentType == models.ContentTypeBook {
+			v.contentType = ""
+		} else {
+			v.contentType = models.ContentTypeBook
+		}
+	case "m":
+		if v.contentType == models.ContentTypeComic {
+			v.contentType = ""
+		} else {
+			v.contentType = models.ContentTypeComic
+		}
+	case "v":
+		switch v.contentType {
+		case "":
+			v.contentType = models.ContentTypeBook
+		case models.ContentTypeBook:
+			v.contentType = models.ContentTypeComic
+		case models.ContentTypeComic:
+			v.contentType = ""
+		}
+	}
+	return v.resetAndLoadBooks()
+}
+
+// handleBookAction handles actions on the selected book
+func (v *LibraryView) handleBookAction(key string) (View, tea.Cmd) {
+	book, ok := v.getSelectedBook()
+	if !ok {
+		return v, nil
+	}
+
+	switch key {
+	case "enter":
+		return v, func() tea.Msg { return OpenBookMsg{Book: book} }
+	case "d":
+		v.deleteBook = &book
+		v.confirmDelete = true
+	case "f":
+		if v.config != nil {
+			_ = v.config.ToggleFavorite(book.ID)
+		}
+	case "w":
+		if v.config != nil {
+			_ = v.config.ToggleQueue(book.ID)
+		}
+	case "i":
+		return v, func() tea.Msg { return ShowBookDetailsMsg{Book: book} }
+	case "A":
+		if book.Author != "" {
+			v.filterAuthor = book.Author
+			v.filterSeries = ""
+			return v, v.resetAndLoadBooks()
+		}
+	case "E":
+		if book.Series != "" {
+			v.filterSeries = book.Series
+			v.filterAuthor = ""
+			return v, v.resetAndLoadBooks()
+		}
+	}
+	return v, nil
+}
+
+// handleQueueReorder handles moving books in the reading queue
+func (v *LibraryView) handleQueueReorder(key string) (View, tea.Cmd) {
+	book, ok := v.getSelectedBook()
+	if !ok || v.config == nil {
+		return v, nil
+	}
+
+	switch key {
+	case "J":
+		_ = v.config.MoveInQueue(book.ID, 1)
+		if v.cursor < len(v.books)-1 {
+			v.cursor++
+		}
+	case "K":
+		_ = v.config.MoveInQueue(book.ID, -1)
+		if v.cursor > 0 {
+			v.cursor--
+		}
+	}
+	return v, v.loadBooks()
+}
+
+// handleToggleCovers toggles cover thumbnail display
+func (v *LibraryView) handleToggleCovers() (View, tea.Cmd) {
+	if v.termMode == terminal.TermModeNone {
+		return v, nil
+	}
+	v.showCovers = !v.showCovers
+	if v.showCovers && len(v.books) > 0 {
+		return v, v.loadVisibleCovers()
+	}
+	return v, nil
+}
+
+// ============================================================
+// Message Handlers
+// ============================================================
+
+// handleBooksLoaded processes the result of a book loading command
+func (v *LibraryView) handleBooksLoaded(msg booksLoadedMsg) tea.Cmd {
+	v.loading = false
+	if msg.err != nil {
+		v.err = msg.err
+		return nil
+	}
+	v.books = msg.books
+	v.total = msg.total
+	v.err = nil
+	if v.cursor >= len(v.books) {
+		v.cursor = max(0, len(v.books)-1)
+	}
+	return v.loadVisibleCovers()
+}
+
+// handleCoverLoaded processes the result of a cover loading command
+func (v *LibraryView) handleCoverLoaded(msg coverLoadedMsg) tea.Cmd {
+	if msg.err == nil && msg.renderedImage != "" {
+		v.coverCache[msg.bookID] = msg.renderedImage
+	}
+	return nil
+}
+
+// handleBookDeleted processes the result of a book deletion command
+func (v *LibraryView) handleBookDeleted(msg bookDeletedMsg) tea.Cmd {
+	v.deleteBook = nil
+	if msg.err != nil {
+		v.err = msg.err
+		return nil
+	}
+	return v.loadBooks()
 }
 
 // View implements View
@@ -894,7 +945,7 @@ func (v *LibraryView) renderFooter() string {
 
 	// Add theme indicator
 	themeName := styles.CurrentTheme().Name
-	themeIndicator := styles.MutedText.Render(" [Theme: " + themeName + "] ") + styles.HelpKey.Render("T") + styles.Help.Render(" change")
+	themeIndicator := styles.MutedText.Render(" [" + themeName + "] ") + styles.HelpKey.Render("T") + styles.Help.Render(" theme")
 
 	helpText := strings.Join(help, "  ")
 	gap := v.width - lipgloss.Width(helpText) - lipgloss.Width(themeIndicator)
@@ -902,7 +953,9 @@ func (v *LibraryView) renderFooter() string {
 		gap = 0
 	}
 
-	return helpText + strings.Repeat(" ", gap) + themeIndicator
+	// Use consistent FooterBar styling
+	content := helpText + strings.Repeat(" ", gap) + themeIndicator
+	return styles.FooterBar.Width(v.width).Render(content)
 }
 
 // renderDeleteConfirmation renders the delete confirmation dialog

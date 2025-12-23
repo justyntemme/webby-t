@@ -232,7 +232,7 @@ func (v *BookDetailsView) renderField(label, value string) string {
 	return labelStyle.Render(label+":") + " " + valueStyle.Render(value) + "\n"
 }
 
-// renderFooter renders the footer help
+// renderFooter renders the footer help with consistent styling
 func (v *BookDetailsView) renderFooter() string {
 	help := []string{
 		styles.HelpKey.Render("enter") + styles.Help.Render(" read"),
@@ -240,7 +240,8 @@ func (v *BookDetailsView) renderFooter() string {
 		styles.HelpKey.Render("w") + styles.Help.Render(" queue"),
 		styles.HelpKey.Render("esc/q") + styles.Help.Render(" back"),
 	}
-	return strings.Join(help, "  ")
+	// Use StatusLine style for footer inside dialog
+	return styles.StatusLine.Render(strings.Join(help, "  "))
 }
 
 // SetSize implements View

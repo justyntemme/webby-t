@@ -254,14 +254,14 @@ func (v *ComicView) renderImage() string {
 	return imgStr
 }
 
-// renderFooter renders the footer help
+// renderFooter renders the footer help with consistent styling
 func (v *ComicView) renderFooter() string {
 	help := []string{
 		styles.HelpKey.Render("h/l") + styles.Help.Render(" prev/next"),
 		styles.HelpKey.Render("g/G") + styles.Help.Render(" first/last"),
 		styles.HelpKey.Render("q") + styles.Help.Render(" back"),
 	}
-	return strings.Join(help, "  ")
+	return styles.FooterBar.Width(v.width).Render(strings.Join(help, "  "))
 }
 
 // SetSize implements View
