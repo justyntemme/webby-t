@@ -972,11 +972,11 @@ func (v *LibraryView) renderFooter() string {
 		help = []string{
 			styles.HelpKey.Render("j/k") + styles.Help.Render(" nav"),
 			styles.HelpKey.Render("enter") + styles.Help.Render(" open"),
-			styles.HelpKey.Render("i") + styles.Help.Render(" info"),
+			styles.HelpKey.Render("b/m") + styles.Help.Render(" books/comics"),
 			styles.HelpKey.Render("/") + styles.Help.Render(" search"),
 			styles.HelpKey.Render("f") + styles.Help.Render(" fav"),
 			styles.HelpKey.Render("w") + styles.Help.Render(" queue"),
-			styles.HelpKey.Render("d") + styles.Help.Render(" del"),
+			styles.HelpKey.Render("i") + styles.Help.Render(" info"),
 			styles.HelpKey.Render("q") + styles.Help.Render(" quit"),
 		}
 	}
