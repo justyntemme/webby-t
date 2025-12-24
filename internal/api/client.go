@@ -38,6 +38,9 @@ func (c *Client) SetToken(token string) {
 	c.token = token
 }
 
+// Debug enables debug logging for API requests
+var Debug bool
+
 // request makes an HTTP request to the API
 func (c *Client) request(method, path string, body interface{}) (*http.Response, error) {
 	var bodyReader io.Reader
@@ -49,7 +52,12 @@ func (c *Client) request(method, path string, body interface{}) (*http.Response,
 		bodyReader = bytes.NewReader(data)
 	}
 
-	req, err := http.NewRequest(method, c.baseURL+path, bodyReader)
+	fullURL := c.baseURL + path
+	if Debug {
+		fmt.Fprintf(os.Stderr, "[API] %s %s\n", method, fullURL)
+	}
+
+	req, err := http.NewRequest(method, fullURL, bodyReader)
 	if err != nil {
 		return nil, err
 	}

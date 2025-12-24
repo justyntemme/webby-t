@@ -125,10 +125,9 @@ func (v *LoginView) Update(msg tea.Msg) (View, tea.Cmd) {
 			v.err = msg.err
 			return v, nil
 		}
-		// Save token and notify app
-		v.config.Token = msg.token
+		// Save token (also records which server it's for) and notify app
 		v.config.Username = msg.user.Username
-		v.config.Save()
+		v.config.SetToken(msg.token)
 		v.client.SetToken(msg.token)
 		return v, func() tea.Msg {
 			return LoginSuccessMsg{User: msg.user, Token: msg.token}

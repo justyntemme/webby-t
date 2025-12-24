@@ -37,6 +37,7 @@ type Bookmark struct {
 type Config struct {
 	ServerURL    string              `json:"server_url"`
 	Token        string              `json:"token,omitempty"`
+	TokenServer  string              `json:"token_server,omitempty"` // Server URL the token was obtained from
 	Username     string              `json:"username,omitempty"`
 	RecentlyRead []RecentlyReadEntry `json:"recently_read,omitempty"`
 	TextScale    float64             `json:"text_scale,omitempty"`    // 0.5-2.0, default 1.0
@@ -86,6 +87,17 @@ func Load() (*Config, error) {
 		cfg.ServerURL = DefaultServerURL
 	}
 
+	// Invalidate token if it was obtained from a different server
+	// Also clear if TokenServer is empty (legacy config) to force re-login
+	if cfg.Token != "" && (cfg.TokenServer == "" || cfg.TokenServer != cfg.ServerURL) {
+		cfg.Token = ""
+		cfg.TokenServer = ""
+		cfg.Username = ""
+		// Save the cleared token
+		cfg.path = configPath
+		_ = cfg.Save()
+	}
+
 	cfg.path = configPath
 	return cfg, nil
 }
@@ -106,15 +118,17 @@ func (c *Config) Save() error {
 	return os.WriteFile(c.path, data, 0600)
 }
 
-// SetToken updates the token and saves
+// SetToken updates the token and saves, also recording which server it's for
 func (c *Config) SetToken(token string) error {
 	c.Token = token
+	c.TokenServer = c.ServerURL
 	return c.Save()
 }
 
 // ClearToken removes the token and saves
 func (c *Config) ClearToken() error {
 	c.Token = ""
+	c.TokenServer = ""
 	c.Username = ""
 	return c.Save()
 }

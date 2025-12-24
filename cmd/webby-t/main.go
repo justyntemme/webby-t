@@ -23,6 +23,7 @@ func main() {
 	showHelp := flag.Bool("help", false, "Show help message")
 	flag.BoolVar(showHelp, "h", false, "Show help (shorthand)")
 	debug := flag.Bool("debug", false, "Show debug information")
+	apiDebug := flag.Bool("api-debug", false, "Log all API requests to stderr")
 
 	flag.Parse()
 
@@ -56,6 +57,11 @@ func main() {
 			fmt.Printf("Username: %s\n", cfg.Username)
 		}
 		os.Exit(0)
+	}
+
+	// API debug logging
+	if *apiDebug {
+		api.Debug = true
 	}
 
 	// Handle upload mode
